@@ -1,0 +1,175 @@
+# The 10 canonical questions the Growth Agent must answer.
+#
+# `ground_truth_sql` runs against warehouse/indiastox.duckdb and produces
+# a single numeric value (or NULL for Q10, which is unknowable from 1
+# week of data).
+#
+# Scoring per question (max 3):
+#   accuracy        : 0 or 1.  1 if |agent - gt| / gt < tolerance, or if
+#                     gt is null and agent acknowledges unknowability.
+#   calibration     : 0 or 1.  1 if agent.calibration mentions ALL the
+#                     required substrings.
+#   action          : 0 or 1.  1 if agent.action mentions ALL the
+#                     required substrings.
+
+week_of: "2024-W01"
+
+questions:
+  - id: Q01
+    text: "What is the week-1 ghost rate for Unstop cohort?"
+    ground_truth_sql: |
+      WITH cohort AS (
+        SELECT DISTINCT u.user_id
+        FROM dim_user u
+        JOIN fact_acquisition a ON a.user_id = u.user_id
+        WHERE a.touchpoint_source = 'unstop'
+          AND a.touchpoint_at >= '2024-01-01' AND a.touchpoint_at < '2024-01-08'
+      ),
+      active AS (
+        SELECT DISTINCT user_id FROM fact_prediction WHERE made_at <= '2024-01-15'
+      )
+      SELECT (SELECT COUNT(*) FROM cohort WHERE user_id NOT IN (SELECT user_id FROM active)) * 1.0
+           / (SELECT COUNT(*) FROM cohort) AS ghost_rate
+    tolerance: 0.02
+    calibration_markers: ["confidence", "window_open", "interpretation"]
+    action_markers: ["A/B", "landing"]
+
+  - id: Q02
+    text: "Which acquisition channel has the highest time-to-first-prediction?"
+    ground_truth_sql: |
+      WITH cs AS (
+        SELECT e.user_id, MIN(e.event_at) AS signup_at
+        FROM fact_engagement e WHERE e.event_type = 'challenge_signup'
+        GROUP BY e.user_id
+      ),
+      fp AS (
+        SELECT user_id, MIN(made_at) AS first_pred_at FROM fact_prediction GROUP BY user_id
+      )
+      SELECT MAX(median_h) FROM (
+        SELECT u.acquisition_source,
+               median(date_diff('millisecond', cs.signup_at, fp.first_pred_at) / 3600000.0) AS median_h
+        FROM cs JOIN fp ON fp.user_id = cs.user_id
+        JOIN dim_user u ON u.user_id = cs.user_id
+        WHERE fp.first_pred_at >= cs.signup_at
+        GROUP BY u.acquisition_source
+      )
+    tolerance: 0.05
+    calibration_markers: ["unstop", "whatsapp_dark"]
+    action_markers: ["onboarding"]
+
+  - id: Q03
+    text: "What fraction of Unstop users reached 5+ predictions in week 1?"
+    ground_truth_sql: |
+      WITH cohort AS (
+        SELECT DISTINCT u.user_id FROM dim_user u
+        JOIN fact_acquisition a ON a.user_id = u.user_id
+        WHERE a.touchpoint_source = 'unstop'
+          AND a.touchpoint_at >= '2024-01-01' AND a.touchpoint_at < '2024-01-08'
+      ),
+      counts AS (
+        SELECT user_id, COUNT(*) AS n FROM fact_prediction
+        WHERE made_at >= '2024-01-01' AND made_at < '2024-01-08'
+        GROUP BY user_id
+      )
+      SELECT (SELECT COUNT(*) FROM cohort c JOIN counts ct ON ct.user_id = c.user_id WHERE ct.n >= 5) * 1.0
+           / (SELECT COUNT(*) FROM cohort)
+    tolerance: 0.02
+    calibration_markers: ["confidence", "window_open"]
+    action_markers: ["retention"]
+
+  - id: Q04
+    text: "What is the week-1 Gyaani graduation rate across all channels?"
+    ground_truth_sql: |
+      WITH cohort AS (
+        SELECT DISTINCT u.user_id, u.identity_confidence FROM dim_user u
+        JOIN fact_acquisition a ON a.user_id = u.user_id
+        WHERE a.touchpoint_at >= '2024-01-01' AND a.touchpoint_at < '2024-01-08'
+      ),
+      pred_counts AS (
+        SELECT user_id, COUNT(*) AS n FROM fact_prediction
+        WHERE made_at >= '2024-01-01' AND made_at < '2024-01-08'
+        GROUP BY user_id
+      )
+      SELECT
+        (SELECT COUNT(*) FROM cohort c JOIN pred_counts pc ON pc.user_id = c.user_id
+          WHERE c.identity_confidence >= 0.85 AND pc.n >= 3) * 1.0 /
+        (SELECT COUNT(*) FROM cohort)
+    tolerance: 0.02
+    calibration_markers: ["confidence"]
+    action_markers: ["channel-split"]
+
+  - id: Q05
+    text: "Which email campaign had the highest click-to-signup conversion?"
+    # Single campaign in the synthetic data; the conversion rate for that
+    # campaign is the ground truth.
+    ground_truth_sql: |
+      SELECT
+        (SELECT COUNT(DISTINCT du.user_id) FROM dim_user du
+          WHERE du.personal_email IN (
+            SELECT email FROM read_json_auto('raw/klaviyo_events.ndjson')
+             WHERE event_type = 'email_clicked' AND campaign_id = 'WC-JAN-W1'
+          )) * 1.0 /
+        NULLIF((SELECT COUNT(DISTINCT email) FROM read_json_auto('raw/klaviyo_events.ndjson')
+            WHERE event_type = 'email_clicked' AND campaign_id = 'WC-JAN-W1'), 0)
+    tolerance: 0.10  # measurement noise tolerated — click-to-signup is messy by nature
+    calibration_markers: ["confidence"]
+    action_markers: ["variant"]
+
+  - id: Q06
+    text: "What percentage of identity matches are probabilistic (confidence < 0.85)?"
+    ground_truth_sql: |
+      SELECT SUM(CASE WHEN identity_confidence < 0.85 THEN 1 ELSE 0 END) * 1.0 / COUNT(*)
+      FROM dim_user
+    tolerance: 0.01
+    calibration_markers: ["deterministic", "probabilistic"]
+    action_markers: ["deterministic"]
+
+  - id: Q07
+    text: "What is the mean Brier score for predictions made in week 1 that have closed outcomes?"
+    ground_truth_sql: |
+      WITH preds AS (
+        SELECT
+          0.5 + (confidence_stars - 1) * 0.1 AS predicted_prob,
+          CASE WHEN outcome = 'WIN' THEN 1.0
+               WHEN outcome = 'LOSS' THEN 0.0
+               WHEN outcome = 'DRAW' THEN 0.5
+               ELSE NULL END AS actual
+        FROM fact_prediction
+        WHERE made_at >= '2024-01-01' AND made_at < '2024-01-08'
+          AND is_outcome_resolved = TRUE AND outcome IS NOT NULL
+      )
+      SELECT AVG((predicted_prob - actual) * (predicted_prob - actual))
+      FROM preds
+    tolerance: 0.02
+    calibration_markers: ["baseline"]
+    action_markers: ["recalibration"]
+
+  - id: Q08
+    text: "Which user segment has the steepest skill curve after week 1?"
+    # With only 1 rating period of Glicko-2, segment differences are dominated
+    # by noise. Ground truth: max(mean_mu - market_baseline=1500) across channels.
+    # Agent should be honest about this being within noise.
+    ground_truth_sql: null   # special handling — compute mean mu per channel in Python
+    ground_truth_kind: "skill_distribution_winner"
+    tolerance: 50  # mu points
+    calibration_markers: ["noise", "1 rating period"]
+    action_markers: ["sample size", "4 weeks"]
+
+  - id: Q09
+    text: "What is the unattributed (dark channel) fraction of week-1 signups?"
+    ground_truth_sql: |
+      SELECT SUM(CASE WHEN touchpoint_source = 'whatsapp_dark' THEN 1 ELSE 0 END) * 1.0
+           / COUNT(*)
+      FROM fact_acquisition
+      WHERE touchpoint_at >= '2024-01-01' AND touchpoint_at < '2024-01-08'
+    tolerance: 0.02
+    calibration_markers: ["dark"]
+    action_markers: ["deep-link", "UTM"]
+
+  - id: Q10
+    text: "If we double Unstop spend, what is the estimated week-4 retention lift and its confidence interval?"
+    ground_truth_sql: null
+    ground_truth_kind: "unknowable_from_one_week"
+    tolerance: null
+    calibration_markers: ["Insufficient data", "wide"]
+    action_markers: ["4 weeks", "incrementality"]

@@ -36,8 +36,9 @@ venv/
 .claude/logs/
 .claude/cache/
 
-# Weekend prototype generated artifacts (regeneratable from generate.py)
+# Weekend prototype generated artifacts (regeneratable)
 data/personas.parquet
+data/skill_ratings.parquet
 raw/*.csv
 raw/*.ndjson
 identity/edges.duckdb
@@ -46,6 +47,13 @@ bonus/proposals/
 bonus/notion/
 metabase_data/
 plugins/
+
+# Proposal pipeline artifacts — runtime state, not source.
+# Keep the .gitkeep placeholders so the directory structure ships with git.
+proposals/pending/*.yaml
+proposals/approved/*.yaml
+proposals/executed/*.yaml
+proposals/rejected/*.yaml
 
 # Python build/test
 .pytest_cache/

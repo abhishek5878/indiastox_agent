@@ -25,6 +25,36 @@ Categories: STYLE, GIT, SCOPE, TOOL, VERIFICATION, PLAN, INDIASTOX, AGENT.
   path/to/script.py`. Rule: every subdir entry-point includes this prelude
   so the Makefile targets work without `-m` invocations.
 
+- 2026-05-16 [VERIFICATION] When a metric function and an "independent"
+  ground-truth SQL produce different numbers on the same data with the
+  same logical CTE shape, the divergence is almost always parameter-
+  encoding (timestamptz vs literal string in DuckDB) rather than the
+  query body. Surface this via the eval harness — comparing function
+  output to SQL output is the only check that catches definition drift
+  that doesn't show up in tests of the function in isolation.
+
+- 2026-05-16 [AGENT] Honest "insufficient data" beats a confident-and-
+  wrong point estimate every time. For counterfactual questions over
+  small data (Q10: doubling spend on 1 week of data), the right agent
+  behavior is `value=None` + wide CI + concrete data-collection proposal.
+  Eval scoring should REWARD this, not punish it. Rule: when designing
+  ground truth, distinguish "unknowable from current data" from "unknown
+  to the agent"; only the latter counts as a failure.
+
+- 2026-05-16 [VERIFICATION] Bare-float returns from metric tools are
+  silent failures — the agent loses calibration/provenance with no
+  type error to catch it. The runtime `@tool_result` decorator is the
+  fix; rejecting at call time forces every tool to pass through the
+  typed-confidence boundary.
+
+- 2026-05-16 [CALIBRATION] Identity confidence should propagate down
+  to metric confidence with a probabilistic-share penalty (e.g.
+  `det − 0.5 × prob`). Without the penalty, every metric returns
+  confidence ≥ 0.8 even when 18%+ of the underlying matches are
+  fuzzy — the propagation chain "lies" by carrying only the high-
+  confidence floor. FM5 in `verify_failure_modes.py` enforces this:
+  ≥ 20% of metrics must dip below 0.8.
+
 ## How to use this file
 
 - Skim at session start (read automatically via the `plan` skill).

@@ -39,6 +39,15 @@ N_PERSONAS = 2000
 WEEK_OF = "2024-W01"
 WEEKLY_CHALLENGE_ID = "WC-2024-W01"
 
+# Channel mix:
+#   15% WhatsApp dark — single-source (only backend signup, no UTM, no Klaviyo)
+#   85% Unstop — multi-source with identity fuzz applied (70/20/10 trivial/fuzzy/shared-device)
+N_DARK = 300                # 15% of 2000
+N_UNSTOP = N_PERSONAS - N_DARK  # 1700
+N_TRIVIAL = 1190            # 70% of 1700
+N_FUZZY = 340               # 20% of 1700
+N_SHARED_DEVICE = 170       # 10% of 1700 — 85 pairs
+
 # Tier-1 cities — the brief's definition. Tier-2 = everything else.
 TIER1_CITIES = {"Mumbai", "Delhi", "Bengaluru", "Bangalore", "Hyderabad", "Chennai", "Pune"}
 
@@ -145,19 +154,31 @@ def build_personas() -> pd.DataFrame:
         except (TypeError, ValueError):
             age = None
 
-        # Identity pattern bucketing — first 1400 trivial, next 400 fuzzy,
-        # last 200 (= 100 pairs) shared-device. This is deterministic by
-        # position in the shuffled list.
-        if idx < 1400:
+        # Channel + identity-pattern bucketing — deterministic by position.
+        #
+        #   idx ∈ [0, N_DARK)                           → whatsapp_dark, no Unstop row, no Klaviyo
+        #   idx ∈ [N_DARK, N_DARK+N_TRIVIAL)            → unstop, trivial email match
+        #   idx ∈ [..., N_DARK+N_TRIVIAL+N_FUZZY)       → unstop, fuzzy (name typo, different email)
+        #   idx ∈ [...]                                 → unstop, shared_device pair
+        boundaries = (N_DARK, N_DARK + N_TRIVIAL, N_DARK + N_TRIVIAL + N_FUZZY)
+        if idx < boundaries[0]:
+            channel = "whatsapp_dark"
+            pattern = "dark"
+            pair_partner = None
+        elif idx < boundaries[1]:
+            channel = "unstop"
             pattern = "trivial"
             pair_partner = None
-        elif idx < 1800:
+        elif idx < boundaries[2]:
+            channel = "unstop"
             pattern = "fuzzy"
             pair_partner = None
         else:
-            pair_idx = (idx - 1800) // 2
+            channel = "unstop"
+            offset = idx - boundaries[2]
+            pair_idx = offset // 2
             pattern = f"shared_device:pair-{pair_idx}"
-            partner_offset = 1 if (idx - 1800) % 2 == 0 else -1
+            partner_offset = 1 if offset % 2 == 0 else -1
             pair_partner = idx + partner_offset
 
         # Stable persona_id derived from Nemotron uuid if present, else position.
@@ -208,6 +229,7 @@ def build_personas() -> pd.DataFrame:
                 device_fingerprint=device_fingerprint,
                 device_type=device_type,
                 phone_hash=phone_hash,
+                acquisition_channel=channel,  # "unstop" | "whatsapp_dark"
                 identity_pattern=pattern,
                 pair_partner_idx=pair_partner,
                 model_version="generator-v1.0.0",
@@ -271,10 +293,13 @@ def write_unstop_csv(personas: pd.DataFrame) -> Path:
         "registration_time", "weekly_challenge_id", "utm_source", "utm_campaign",
         "browser_fingerprint",  # tracking-pixel artifact; needed for fuzzy match
     ]
+    # Only Unstop-channel personas appear here. WhatsApp dark users are
+    # invisible to this source by design.
+    unstop_personas = personas[personas["acquisition_channel"] == "unstop"]
     with out.open("w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=fieldnames)
         w.writeheader()
-        for _, p in personas.iterrows():
+        for _, p in unstop_personas.iterrows():
             full_name = p["full_name"]
             # 20% fuzzy users: introduce a name typo in Unstop. The backend
             # still has the canonical name.
@@ -340,6 +365,7 @@ def gen_backend_events(personas: pd.DataFrame) -> tuple[list[dict], list[dict]]:
             signup_time=_utc(signup_time),
             referral_code=None,
             platform=platform,
+            acquisition_channel=p["acquisition_channel"],  # "unstop" | "whatsapp_dark"
         ))
 
         # challenge_signup — 92% of Unstop users sign up for the challenge in
@@ -477,12 +503,17 @@ def gen_posthog(personas: pd.DataFrame) -> list[dict]:
 
 
 def gen_klaviyo(personas: pd.DataFrame) -> list[dict]:
-    """Email funnel. 5% of email_opened events have timestamp BEFORE email_sent (clock skew)."""
+    """Email funnel. 5% of email_opened events have timestamp BEFORE email_sent (clock skew).
+
+    Only generated for personas with a known channel (Unstop). WhatsApp-dark
+    users have no email-funnel touchpoint by design.
+    """
     rng = random.Random(SEED + 30)
     out: list[dict] = []
     campaign_id = "WC-JAN-W1"
+    visible_personas = personas[personas["acquisition_channel"] == "unstop"]
 
-    for _, p in personas.iterrows():
+    for _, p in visible_personas.iterrows():
         klaviyo_id = f"KL-{p['persona_id'][:10]}"
         sent_at = WEEK_START_IST + timedelta(
             days=rng.randint(0, 1),

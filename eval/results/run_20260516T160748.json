@@ -1,0 +1,169 @@
+{
+  "ts": "2026-05-16T16:07:48.251214+00:00",
+  "session_id": "sess-a6a909d10781",
+  "week_of": "2024-W01",
+  "total_score": 27,
+  "max_total": 30,
+  "results": [
+    {
+      "id": "Q01",
+      "text": "What is the week-1 ghost rate for Unstop cohort?",
+      "ground_truth": 0.2858187134502924,
+      "ground_truth_kind": "numeric",
+      "agent_value": 0.2858187134502924,
+      "agent_calibration": "confidence=0.73, sample_n=1368, window_open=False, provenance=[deterministic_match:1632, probabilistic_match:344, low_confidence:24, cohort_filter:unstop...]. 391/1368 (28.6%) of unstop cohort made zero predictions in 7 days. Window closed.",
+      "agent_action": "Ghost rate 28.6% is above the 20% concern threshold. Propose A/B testing Unstop landing-page personalization (college-cohort-specific copy) to reduce ghost rate by 10pp.",
+      "scores": {
+        "accuracy": 1,
+        "calibration": 0,
+        "action": 1,
+        "total": 2,
+        "max": 3
+      }
+    },
+    {
+      "id": "Q02",
+      "text": "Which acquisition channel has the highest time-to-first-prediction?",
+      "ground_truth": 34.333333333333336,
+      "ground_truth_kind": "numeric",
+      "agent_value": 34.333333333333336,
+      "agent_calibration": "Cross-channel medians (hours): whatsapp_dark=29.5, unstop=34.3. Median time-to-first-prediction = 33.4 hours (n=1319, filter=all). Window closed.",
+      "agent_action": "Channel 'unstop' takes 34.3h to first prediction (slowest). Propose onboarding-flow A/B test specifically for this cohort.",
+      "scores": {
+        "accuracy": 1,
+        "calibration": 1,
+        "action": 1,
+        "total": 3,
+        "max": 3
+      }
+    },
+    {
+      "id": "Q03",
+      "text": "What fraction of Unstop users reached 5+ predictions in week 1?",
+      "ground_truth": 0.12353801169590643,
+      "ground_truth_kind": "numeric",
+      "agent_value": 0.13450292397660818,
+      "agent_calibration": "confidence=0.90, sample_n=1368, window_open=False, provenance=[cohort_filter:unstop, threshold:>=5, cohort_size:1368, users_at_threshold:184]. 184/1368 (13.5%) of unstop users made \u2265 5 predictions in W01.",
+      "agent_action": "13.5% of Unstop users hit 5+ predictions. Build a retention loop (push notification + leaderboard) targeting the 2-4 prediction tier \u2014 highest engagement-lift opportunity.",
+      "scores": {
+        "accuracy": 0,
+        "calibration": 1,
+        "action": 1,
+        "total": 2,
+        "max": 3
+      }
+    },
+    {
+      "id": "Q04",
+      "text": "What is the week-1 Gyaani graduation rate across all channels?",
+      "ground_truth": 0.26506024096385544,
+      "ground_truth_kind": "numeric",
+      "agent_value": 0.2740963855421687,
+      "agent_calibration": "confidence=0.85, sample_n=1660, window_open=False, provenance=[cohort_filter:all, cohort_size:1660, graduates:455, definition:identity_confidence>=0.85 AND predictions>=3]. Gyaani graduation rate = 27.4% (455/1660 all users meet identity_confidence >= 0.85 AND made >= 3 predictions in W01).",
+      "agent_action": "Graduation rate 27.4%. Worth running a channel-split: graduation rate by acquisition_source to see if dark/Unstop differ on this leading retention indicator.",
+      "scores": {
+        "accuracy": 0,
+        "calibration": 1,
+        "action": 1,
+        "total": 2,
+        "max": 3
+      }
+    },
+    {
+      "id": "Q05",
+      "text": "Which email campaign had the highest click-to-signup conversion?",
+      "ground_truth": 1.0150375939849625,
+      "ground_truth_kind": "numeric",
+      "agent_value": 1.0150375939849625,
+      "agent_calibration": "confidence=0.70, sample_n=133, window_open=False, provenance=[campaign:WC-JAN-W1, clicks:133, matched_signups:135]. Campaign WC-JAN-W1: 135/133 (101.5%) email clicks led to a tracked signup.",
+      "agent_action": "WC-JAN-W1 has click-to-signup 101.5%. Single campaign \u2014 propose running WC-JAN-W2 with a creative variant and comparing on this metric next week.",
+      "scores": {
+        "accuracy": 1,
+        "calibration": 1,
+        "action": 1,
+        "total": 3,
+        "max": 3
+      }
+    },
+    {
+      "id": "Q06",
+      "text": "What percentage of identity matches are probabilistic (confidence < 0.85)?",
+      "ground_truth": 0.184,
+      "ground_truth_kind": "numeric",
+      "agent_value": 0.184,
+      "agent_calibration": "deterministic=1632, probabilistic=344, low_confidence=24, total=2000. Probabilistic floor = 18.4%.",
+      "agent_action": "18.4% of identity matches are probabilistic (confidence < 0.85). That is the floor on attribution uncertainty. To reduce, add a deterministic join key (phone hash verified at signup, or deep-link UTM passthrough).",
+      "scores": {
+        "accuracy": 1,
+        "calibration": 1,
+        "action": 1,
+        "total": 3,
+        "max": 3
+      }
+    },
+    {
+      "id": "Q07",
+      "text": "What is the mean Brier score for predictions made in week 1 that have closed outcomes?",
+      "ground_truth": 0.3059102972399151,
+      "ground_truth_kind": "numeric",
+      "agent_value": 0.3051644398766701,
+      "agent_calibration": "confidence=0.85, sample_n=3892, window_open=False, provenance=[closed_predictions:3892, probability_mapping:stars_1..5 -> p_0.5..0.9, actual_mapping:WIN=1, LOSS=0, DRAW=0.5]. Mean Brier = 0.3052 over 3892 closed predictions. Lower is better; 0.25 is the random-guess baseline.",
+      "agent_action": "Brier = 0.305. Random-guess baseline is 0.25. The current confidence-star \u2192 probability mapping (1=0.5..5=0.9) appears miscalibrated; propose mapping recalibration after 4 weeks of data.",
+      "scores": {
+        "accuracy": 1,
+        "calibration": 1,
+        "action": 1,
+        "total": 3,
+        "max": 3
+      }
+    },
+    {
+      "id": "Q08",
+      "text": "Which user segment has the steepest skill curve after week 1?",
+      "ground_truth": -17.208438517790682,
+      "ground_truth_kind": "skill_winner:whatsapp_dark",
+      "agent_value": null,
+      "agent_calibration": "unstop mean mu = 1474 (n=877), whatsapp_dark mean mu = 1483 (n=162). Difference < 25 mu = within Glicko-2 noise floor for 1 rating period. No segment difference detected.",
+      "agent_action": "No significant segment difference at this sample size. Re-evaluate at 4 weeks or with sigma-update step enabled. Don't trust any segment-skill claim with only 1 rating period of data.",
+      "scores": {
+        "accuracy": 1,
+        "calibration": 1,
+        "action": 1,
+        "total": 3,
+        "max": 3
+      }
+    },
+    {
+      "id": "Q09",
+      "text": "What is the unattributed (dark channel) fraction of week-1 signups?",
+      "ground_truth": 0.17590361445783131,
+      "ground_truth_kind": "numeric",
+      "agent_value": 0.17590361445783131,
+      "agent_calibration": "confidence=1.00, sample_n=1660, window_open=False, provenance=[dark_signups:292, total_signups:1660, definition:touchpoint_source='whatsapp_dark']. 292/1660 (17.6%) of W01 signups are dark (no UTM, no Klaviyo, NULL referral). Channel-attribution metrics that ignore this fraction are methodologically suspect.  CAC bounds \u2014 Unstop CAC = \u20b9183 (\u20b9250,000 spend / 1368 signups). WhatsApp-dark CAC is bounded: lower \u20b90 (organic-quality) to upper \u20b9350 (paid-referral-quality). True value unknowable without attribution improvements (deep linking, opt-in referral tracking).",
+      "agent_action": "Dark fraction 17.6%. Methodologically, any channel-attribution experiment must control for this fraction or be flagged invalid. Next step: deep-link UTM passthrough on WhatsApp shares to reduce dark fraction.",
+      "scores": {
+        "accuracy": 1,
+        "calibration": 1,
+        "action": 1,
+        "total": 3,
+        "max": 3
+      }
+    },
+    {
+      "id": "Q10",
+      "text": "If we double Unstop spend, what is the estimated week-4 retention lift and its confidence interval?",
+      "ground_truth": null,
+      "ground_truth_kind": "unknowable",
+      "agent_value": null,
+      "agent_calibration": "Insufficient data: 1 week observed; week-4 retention requires 4+ weeks of post-launch data. Wide CI [-10pp, +25pp] reflects lower bound = saturation (double spend hits ad-fatigue at unchanged audience) vs upper bound = linear scaling (perfect untapped audience). Current week's WAP=1344, unstop ghost rate=28.6% \u2014 neither is a leading indicator for the counterfactual ask. Confidence in any point estimate < 0.20.",
+      "agent_action": "Don't act on a counterfactual lift estimate from 1 week of data. Run a small incrementality test on 10% of Unstop budget for 4 weeks; that leading indicator is what unlocks the doubling decision. Estimated wait: 4 weeks; cost: 10% extra spend.",
+      "scores": {
+        "accuracy": 1,
+        "calibration": 1,
+        "action": 1,
+        "total": 3,
+        "max": 3
+      }
+    }
+  ]
+}

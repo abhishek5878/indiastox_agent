@@ -37,12 +37,15 @@ WEEK = "2024-W01"
 def _insert(con, mr: MetricResult, breakdown_key: str = "all", breakdown_value: float | None = None) -> None:
     con.execute(
         """INSERT OR REPLACE INTO metric_results
-           (metric_name, as_of, value, definition_version, is_complete,
+           (metric_name, as_of, value, confidence, sample_n, provenance_json,
+            window_open, interpretation, definition_version,
             confidence_interval_low, confidence_interval_high, computation_sql,
             breakdown_key, breakdown_value, _source_system)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         [
-            mr.metric_name, mr.as_of, mr.value, mr.definition_version, mr.is_complete,
+            mr.metric_name, mr.as_of, mr.value, mr.confidence, mr.sample_n,
+            json.dumps(mr.provenance), mr.window_open, mr.interpretation,
+            mr.definition_version,
             mr.confidence_interval[0] if mr.confidence_interval else None,
             mr.confidence_interval[1] if mr.confidence_interval else None,
             mr.computation_sql, breakdown_key, breakdown_value,
@@ -101,7 +104,7 @@ def main() -> None:
                     con,
                     gr_all,
                     breakdown_key=f"{dim_name}={r['value']}",
-                    breakdown_value=r["ghost_rate"],
+                    breakdown_value=r["rate"],
                 )
     finally:
         con.close()

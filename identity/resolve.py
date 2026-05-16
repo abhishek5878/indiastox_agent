@@ -403,10 +403,14 @@ def write_edges(edges: list[dict]) -> None:
 def build_dim_user(unstop, signups, edges) -> list[dict]:
     """Resolve each backend signup into a canonical dim_user row.
 
-    identity_confidence = MIN over all merge edges (anti-merge edges with
-    confidence -1.0 are recorded but do not lower the resolution confidence;
-    they flag a constraint, not a stitching weakness — we surface that via
-    identity_flags instead).
+    identity_confidence = MIN over all merge edges. WhatsApp-dark users are
+    single-source (no Unstop row by design); they get confidence=1.0 with
+    the flag `single_source_attribution_unknown` so they don't drag down
+    cross-source-resolution metrics. Their acquisition_source is the
+    channel value carried by the backend signup payload.
+
+    Anti-merge edges with confidence -1.0 are recorded but do not lower
+    identity_confidence; they flag a constraint, surfaced via identity_flags.
     """
     edges_by_entity: dict[str, list[dict]] = defaultdict(list)
     for e in edges:
@@ -417,16 +421,23 @@ def build_dim_user(unstop, signups, edges) -> list[dict]:
     rows = []
     for s in signups:
         entity_id = s["user_id"]
+        channel = s.get("acquisition_channel") or "unstop"
         entity_edges = edges_by_entity.get(entity_id, [])
         merge_edges = [e for e in entity_edges if e["confidence"] >= 0]
-        anti = [e for e in entity_edges if e["confidence"] < 0]
 
         if merge_edges:
             min_conf = min(e["confidence"] for e in merge_edges)
+            flags = sorted({e["resolution_method"] for e in entity_edges})
+        elif channel == "whatsapp_dark":
+            # Single-source by design — no cross-source verification possible,
+            # but no ambiguity either. Trust the signup at 1.0; tag the
+            # attribution gap explicitly.
+            min_conf = 1.0
+            flags = ["single_source_attribution_unknown"]
         else:
-            # No edges — the backend signup wasn't matched to any Unstop row.
-            min_conf = 0.30  # low-confidence unresolved
-        flags = sorted({e["resolution_method"] for e in entity_edges})
+            # Unstop user we expected to match but didn't — low-confidence.
+            min_conf = 0.30
+            flags = ["unresolved_expected_unstop_match"]
 
         # Best-effort college_email lookup (from the matching Unstop row).
         college_email = None
@@ -452,7 +463,7 @@ def build_dim_user(unstop, signups, edges) -> list[dict]:
             identity_confidence=min_conf,
             identity_flags=flags,
             model_version=MODEL_VERSION,
-            acquisition_source="unstop",  # universe is Unstop-only in v1
+            acquisition_source=channel,
             signup_time=_parse_dt(s["signup_time"]),
         ))
     return rows
@@ -500,25 +511,43 @@ def load_warehouse(
         ],
     )
 
-    # fact_acquisition — one row per Unstop registration (the only source
-    # we hardwire to a user in v1; broader attribution lives in a later pass).
+    # fact_acquisition — one row per user per touchpoint.
+    #   - Unstop users: row sourced from the Unstop CSV (UTM + campaign known).
+    #   - WhatsApp-dark users: row with touchpoint_source='whatsapp_dark',
+    #     NULL UTM/campaign, touchpoint_at = backend signup_time. This is
+    #     the "we know they came in but not from where" signal the agent
+    #     surfaces as bounded-CAC uncertainty.
     unstop_by_local = {_local_part(u["college_email"]): u for u in unstop}
     acq_rows = []
     for s in signups:
+        channel = s.get("acquisition_channel") or "unstop"
         local = _local_part(s["personal_email"])
         u = unstop_by_local.get(local)
-        if not u:
-            continue
-        acq_rows.append((
-            f"AQ-{s['user_id'][:12]}",
-            s["user_id"],
-            WEEKLY_CHALLENGE_ID,
-            "unstop",
-            u.get("utm_source"),
-            u.get("utm_campaign"),
-            _parse_dt(u["registration_time"]),
-            "unstop_csv",
-        ))
+        if u:
+            acq_rows.append((
+                f"AQ-{s['user_id'][:12]}",
+                s["user_id"],
+                WEEKLY_CHALLENGE_ID,
+                "unstop",
+                u.get("utm_source"),
+                u.get("utm_campaign"),
+                _parse_dt(u["registration_time"]),
+                "unstop_csv",
+            ))
+        elif channel == "whatsapp_dark":
+            acq_rows.append((
+                f"AQ-{s['user_id'][:12]}",
+                s["user_id"],
+                WEEKLY_CHALLENGE_ID,
+                "whatsapp_dark",
+                None,
+                None,
+                _parse_dt(s["signup_time"]),
+                "backend.ndjson",
+            ))
+        # else: signup with no matching unstop row but channel='unstop'
+        # — leave out of fact_acquisition; surfaces as "expected match unresolved"
+        # via dim_user.identity_flags.
     con.executemany(
         """INSERT INTO fact_acquisition
            (acquisition_id, user_id, weekly_challenge_id, touchpoint_source,

@@ -202,13 +202,56 @@ class MetricResults(WorkbookBase):
     metric_name: str
     as_of: datetime
     value: float
+    confidence: float
+    sample_n: int
+    provenance_json: str   # JSON-encoded list[str]
+    window_open: bool
+    interpretation: str
     definition_version: str
-    is_complete: bool
     confidence_interval_low: Optional[float] = None
     confidence_interval_high: Optional[float] = None
     computation_sql: str
-    breakdown_key: str = "all"  # JSON-stringified breakdown coords, "all" if none
+    breakdown_key: str = "all"
     breakdown_value: Optional[float] = None
+
+
+class AgentActions(WorkbookBase):
+    """Every tool call the agent makes is itself an event. This is the audit
+    trail that makes agent behavior reproducible and reviewable.
+    """
+
+    table_name: ClassVar[str] = "agent_actions"
+    primary_key: ClassVar[list[str]] = ["action_id"]
+
+    action_id: str
+    ts: datetime
+    session_id: str
+    tool_name: str
+    args_json: str
+    result_hash: str  # sha256 of MetricResult agent-visible fields
+    result_confidence: float
+    downstream_proposal_id: Optional[str] = None
+
+
+class Proposals(WorkbookBase):
+    """Experiment proposals — written by the agent, approved by a human.
+
+    Status lifecycle: pending -> approved -> executed (-> rejected at any stage).
+    """
+
+    table_name: ClassVar[str] = "proposals"
+    primary_key: ClassVar[list[str]] = ["proposal_id"]
+
+    proposal_id: str
+    created_ts: datetime
+    triggered_by_action_id: Optional[str] = None
+    hypothesis: str
+    affected_metric: str
+    expected_lift_pct: float
+    confidence: float
+    required_sample_n: int
+    estimated_days: int
+    status: str  # 'pending' | 'approved' | 'executed' | 'rejected'
 
 
 ALL_TABLES: list[type[WorkbookBase]] = [
@@ -219,6 +262,8 @@ ALL_TABLES: list[type[WorkbookBase]] = [
     FactPrediction,
     AuditLog,
     MetricResults,
+    AgentActions,
+    Proposals,
 ]
 
 

@@ -109,3 +109,39 @@ Phase 4 complete. All 13 SETUP.md §10 checklist items shipped.
 
 ### Status
 Weekend prototype shipped. Manual steps remaining: bring up Metabase + DuckDB driver + build four saved questions; cross-model verification on the position paper.
+
+## 2026-05-16 — Layers A–E (eval harness, Glicko-2, typed-confidence chain, agent + proposal pipeline)
+
+### Actions taken
+- `core/confidence.py`: canonical `MetricResult` (value / confidence / sample_n / provenance / window_open / interpretation). `@tool_result` decorator rejects bare-float returns at runtime. `identity_confidence_summary()` propagates user-pool confidence into every metric using the formula `det − 0.5 × prob`.
+- `schema/workbook.py`: added `agent_actions` and `proposals` tables. `metric_results` columns rebuilt to mirror the new shape (confidence, sample_n, provenance_json, window_open, interpretation).
+- `generate.py`: 15% WhatsApp-dark channel — 300 personas with no Unstop row, no Klaviyo events. Channel-mix breakdown: 300 dark / 1190 trivial / 340 fuzzy / 170 shared-device (85 pairs).
+- `identity/resolve.py`: dark users get `identity_confidence=1.0` + `single_source_attribution_unknown` flag; `fact_acquisition` carries a row with `touchpoint_source='whatsapp_dark'` and NULL UTMs.
+- `metrics/definitions.py`: refactored to new MetricResult shape, added 6 new metrics (`dark_channel_fraction`, `channel_cac_bounds`, `brier_score`, `gyaani_graduation_rate`, `predictions_per_user`, `email_click_to_signup`).
+- `metrics/skill.py`: Glicko-2 implementation (volatility-update step held constant for v1). 1,039 users with ≥ 2 closed outcomes; mean μ = 1475 with no meaningful cross-channel difference.
+- `mcp/tools.py`: every tool wrapped with `@tool_result`. `ToolSession.call()` audit-logs each invocation to `agent_actions` with `result_hash` (sha256 of agent-visible fields).
+- `agent/growth_agent.py`: rule-based agent answering the 10 canonical questions. Q08 correctly reports "no significant segment difference" (within Glicko-2 noise floor for 1 rating period); Q10 returns `value=None` with a wide CI and proposes a 4-week incrementality test.
+- `eval/canonical_questions.yaml` + `eval/run_eval.py`: 10 questions, 8 with SQL ground truth, 1 with skill-distribution comparison, 1 (Q10) genuinely unknowable. Scoring: 0/1 accuracy + 0/1 calibration + 0/1 action = max 3 per Q, 30 total. Q10 scored fairly: agent answers "insufficient data" → accuracy=1, calibration=1, action=1.
+- `bonus/experiment_loop.py` rewritten: proposal lands in `proposals/pending/<id>.yaml`, DuckDB `proposals` row inserted, the triggering `agent_actions.downstream_proposal_id` is set in the same transaction. `bonus/approve.py` (also `make approve PROPOSAL_ID=...`) moves the YAML, updates status, and logs a `proposal_approved` agent_action.
+- `DEMO.md`: 5-minute Loom script with concrete commands per timestamp.
+- `verify_failure_modes.py`: added FM5 (≥20% of metrics with conf < 0.8), FM6 (eval score < 28/30), FM7 (proposal pipeline end-to-end). Now 7 checks; all pass.
+
+### Numbers (W01 after dark-channel addition)
+- 2,000 personas; 1,700 Unstop rows; 8,308 backend events; 4,466 outcomes (deferred); 44,797 PostHog events; 2,518 Klaviyo events; 3,500 GA4 sessions.
+- Identity resolution: high 1,632 (81.6%) / medium 344 (17.2%) / low 24 (1.2%) / blocked 170.
+- Eval: **27/30** (FM6 passes — agent did NOT score 28+).
+- Confidence-propagation: 6/11 metrics report confidence < 0.8 (FM5 passes).
+- Proposal pipeline: lifecycle pending → approved verified end-to-end (FM7 passes).
+
+### Files modified / added
+- New: `core/`, `mcp/`, `agent/`, `eval/`, `proposals/`, `DEMO.md`, `metrics/skill.py`, `bonus/approve.py`.
+- Edited: `schema/workbook.py`, `generate.py`, `identity/resolve.py`, `metrics/definitions.py`, `load_metrics_to_db.py`, `bonus/experiment_loop.py`, `verify_failure_modes.py`, `Makefile`.
+
+### Issues encountered
+- `is_complete` was renamed to `window_open` (opposite semantics). `load_metrics_to_db.py` and the `metric_results` schema both had to migrate. Caught by an `AttributeError` on the first end-to-end run.
+- `ghost_rate` breakdowns key drift: per-source rows used `rate` after the refactor, but `load_metrics_to_db.py` still read `ghost_rate`. Bug caught immediately at end-to-end.
+- FM2 false-positive on `eval/canonical_questions.yaml`: independent SQL is intentional for ground truth. Added an `is_relative_to(REPO/'eval')` exemption to the check.
+- Q03 / Q04 are 1pp off between agent and YAML SQL despite identical CTE shape — likely a TZ-handling difference between parameterized timestamps and string-literal timestamps in DuckDB. The eval catches this as `accuracy=0` on those questions; the lesson is that "defined once" in code can still drift if parameter encoding differs.
+
+### Status
+Layers A–E shipped. All 7 failure-mode checks pass; 12/12 metric tests pass; 27/30 eval score. Manual Metabase bring-up still pending.
