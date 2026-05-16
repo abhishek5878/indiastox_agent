@@ -1,0 +1,95 @@
+# Task: Weekend prototype — analytics substrate in miniature
+
+## Goal
+
+Ship the IndiaStox weekend-brief prototype (per `IndiaStox_Agent_Native_Analytics_Brief.md` §4): a 48-hour working miniature of the production analytics platform, on synthetic data we generate ourselves. One week of synthetic Indiastox traffic (~2k users) across five mock sources, with deliberate identity-graph fuzz (70% clean / 30% needing fuzzy stitching), the weekly-challenge-signup → challenge-participation deferred-join pattern, and five artifacts: a versioned workbook schema, a confidence-scored identity-resolution step, a metric semantic layer with the four required metrics defined exactly once, a Metabase (or Superset) dashboard wired to those metrics, and a one-page position paper on three open questions.
+
+## Phase 1: Pick the stack (the one decision that gates everything)
+- [ ] Pick storage shape — Postgres-only / DuckDB+Parquet / ClickHouse / warehouse + serving. Commit the choice to `CLAUDE.md`.
+- [ ] Pick language (Python likely, given the data tooling) and write down the verify commands.
+- [ ] Decide dashboard tool: Metabase vs Superset. Local install path documented.
+**Done when:** `CLAUDE.md` stack section has no `TBD` lines; `verify` skill can be run end-to-end on an empty repo.
+**Status:** pending
+
+## Phase 2: Synthetic data generator
+- [ ] Generator script for one week of traffic for ~2k synthetic users.
+- [ ] Five sources: Unstop CSV, backend Postgres stream, PostHog frontend events, Klaviyo email events, GA4 sessions.
+- [ ] Deliberate identity-graph fuzz: 70% clean deterministic email matches; 30% mismatched (college email on Unstop vs personal Gmail on app signup).
+- [ ] Weekly challenge: signup event, then deferred participation event 3–14 days later (the IndiaStox-specific deferred-join pattern).
+- [ ] Property tests on the generator so we trust the fuzz is what we think it is.
+**Done when:** running the generator produces a deterministic-by-seed dataset; the identity-graph fuzz rate is verifiable; the deferred-join is present.
+**Status:** pending
+
+## Phase 3: Identity resolution with typed confidence
+- [ ] Step that ingests the five sources and emits user-touchpoint edges.
+- [ ] Each edge carries: confidence score (0–1), provenance string, matcher version.
+- [ ] No boolean match anywhere in the pipeline. Failing this → BLOCKER per `code-quality.md`.
+- [ ] Property test: a 70/30 fuzz dataset produces ~70% high-confidence matches and ~30% lower-confidence with provenance "fuzzy:<algorithm>".
+**Done when:** identity edges are typed; the dashboard can query them by confidence band.
+**Status:** pending
+
+## Phase 4: Metric semantic layer
+- [ ] Define `weekly_active_posters` once, as a pure function over the event stream.
+- [ ] Define `time_to_first_action` once.
+- [ ] Define `unstop_to_participation_rate` once (this is where the deferred-join shows up).
+- [ ] Define `ghost_rate` once.
+- [ ] Test: each metric called from both the dashboard and an ad-hoc query produces the same number.
+**Done when:** the four metrics are defined in exactly one place; the test passes.
+**Status:** pending
+
+## Phase 5: Dashboard
+- [ ] Stand up Metabase (or Superset) locally.
+- [ ] Wire the four metrics from the semantic layer.
+- [ ] Three views: Weekly Challenge funnel, channel attribution, cohort retention.
+- [ ] Dashboard must answer one specific ad-hoc question via a natural-language layer (per brief's bonus round).
+**Done when:** the three views render against the synthetic data; the NL-layer query works end-to-end.
+**Status:** pending
+
+## Phase 6: Position paper
+- [ ] Pick three of the brief's §6 open questions.
+- [ ] Write a one-pager: stance, rationale, tradeoff accepted, what would change the answer.
+- [ ] Run cross-model verification on the paper before committing.
+**Done when:** position paper is in the repo and reviewed by a second model.
+**Status:** pending
+
+## Phase 7 (bonus): Closed-loop event
+- [ ] Take one dashboard finding (e.g. ghost rate jumped 15%).
+- [ ] Synthetic Notion page that proposes a follow-up experiment.
+- [ ] The proposal itself is logged as an event in the same workbook.
+**Done when:** the proposal-event is queryable in the same stream as the finding that produced it.
+**Status:** pending
+
+## Files likely touched
+- `synth/generator.py` (new) — synthetic-data generator.
+- `pipeline/identity.py` (new) — identity resolution with typed confidence.
+- `semantic/metrics.py` (new) — metric semantic layer.
+- `dashboard/` (new) — Metabase config or Superset dashboard JSON.
+- `docs/position_paper.md` (new) — three answers.
+- `tests/` (new) — property tests for generator, identity, metrics.
+- `CLAUDE.md` — stack section filled in by Phase 1.
+
+## Errors Encountered
+
+| Phase | Error | Resolution |
+|---|---|---|
+|   |   |   |
+
+## Adversarial review (counterarguments)
+
+1. **The synthetic data may be too clean to test identity resolution.** If 30% fuzz is generated by a simple "swap email domain" rule, the resolution step will solve it trivially. **Mitigation:** seed the fuzz with multiple noise types (email swap, name typos, device-id reset, IP collision) so the algorithm has to actually work.
+
+2. **Picking Postgres-only for Phase 1 may foreclose on the warehouse+serving-layer architecture we'll need at 500M events.** **Mitigation:** the position paper has to take this on directly — what's the migration story, what's the latency budget for tool-callable metrics, and at what event volume does the choice change?
+
+3. **The metric semantic layer can drift even when defined "once" — a copy-paste in a dashboard query silently re-defines `weekly_active_posters`.** **Mitigation:** the dashboard must call the metric *by function name*, not embed the SQL. Validate this with a test that diffs the rendered SQL.
+
+## Open questions
+
+- Stack — see Phase 1. This is the load-bearing first decision.
+- Which second model for cross-model verification on the position paper.
+- Should the deferred-join pattern be modeled as a separate event table or as a self-join on the events stream?
+
+## Review (filled at end)
+
+- What shipped:
+- What's left:
+- Lessons for `lessons.md`:
