@@ -38,17 +38,21 @@ Ship the IndiaStox weekend-brief prototype (per `IndiaStox_Agent_Native_Analytic
 
 ## Phase 5: Dashboard
 - [x] `docker-compose.yml` for Metabase + DuckDB JDBC plugin path.
-- [x] Four dashboard questions specified inline in docker-compose.yml; Q2 + Q4 read `metric_results`, not the raw facts. The "defined once" contract is enforced.
-- [ ] Manual step (left for the user): bring up Metabase, load DuckDB driver, build the four saved questions.
-**Done when:** four saved questions render against the synthetic data.
-**Status:** in_progress  (code shipped; manual UI step pending — Metabase needs Docker)
-**Handoff:** Run `docker compose up -d`, drop the DuckDB driver JAR into `plugins/`, then build the four questions per the spec in `docker-compose.yml`.
+- [x] Four dashboard questions specified inline; Q2 + Q4 read `metric_results`, not the raw facts. "Defined once" contract enforced at the dashboard layer (FM2 catches violations).
+- [x] `dashboard/render_panels.py` — four panels rendered as markdown tables from the live warehouse. `make dashboard-panels` writes `dashboard/PANELS.md`. Strict-subsetting funnel, metric_results-based attribution.
+- [x] `dashboard/seed.py` — Metabase API script that programmatically creates the four saved questions + "IndiaStox Weekly" dashboard. Idempotent. `make dashboard-seed` once `docker compose up -d` is done.
+- [ ] Manual: bring Metabase up via Docker, drop the DuckDB JDBC JAR into `plugins/`, then `make dashboard-seed` with `METABASE_USER/PASS` env vars.
+**Done when:** four saved questions render in the actual Metabase UI.
+**Status:** in_progress  (in-repo deliverable complete; manual Metabase UI bring-up is the last step)
+**Handoff:** `docker compose up -d` → finish first-run setup at http://localhost:3000 → place the DuckDB driver JAR in `plugins/` → `export METABASE_URL=http://localhost:3000 METABASE_USER=... METABASE_PASS=...` → `make dashboard-seed`. Same SQL as `dashboard/render_panels.py` (already verified against the warehouse).
 
 ## Phase 6: Position paper
-- [x] 1007 words, three brief §6 questions answered (storage, engagement definition, Unstop drop ownership) plus one added (typed freshness on model-derived attributes).
-- [ ] Cross-model verification pass (per `.claude/rules/cross-model-verification.md`). Pending the user picking a second model and running the check.
-**Done when:** paper is in repo and reviewed by a second model.
-**Status:** in_progress  (text shipped; cross-model verification pending)
+- [x] `agent/position_paper_generator.py` + `make position-paper` regenerates POSITION_PAPER.md from live tool calls. 1435 words, 100 numeric tokens, 4 CLAIMs with FALSIFIABLE BY clauses, agent-signed with session_id + metric_version strings.
+- [x] All FOUR §6 brief questions answered: Q1 storage (DuckDB until ~50M events), Q2 engagement (≥3 predictions AND identity_confidence ≥ 0.85; with the "showing architecture, not validating causal claim" caveat), Q3 Unstop drop ownership (Growth Ops Analyst + Head of Growth backup), Q4 backfill horizon (three-tier: full <4w, predictions-only 4–12w, cold-storage-only >12w). Plus an added "freshness typing on model-derived attributes" as the question I would add.
+- [ ] Cross-model verification: paste the load-bearing CLAIMs into a second-lineage model per `.claude/rules/cross-model-verification.md`.
+**Done when:** paper is in repo AND a second-model independent read has either ratified or surfaced a disagreement worth addressing.
+**Status:** in_progress  (text shipped, audit-grade; cross-model verification pending)
+**Handoff:** CLAIMs to verify (paste each into Gemini / GPT-5 / a fresh Claude session): (1) DuckDB-until-50M as Phase 1 storage, (2) engagement = ≥3 predictions AND identity_confidence ≥ 0.85, (3) Growth Ops Analyst owns Unstop drop with Head of Growth backup, (4) don't backfill >12w into the analytics layer.
 
 ## Phase 7 (bonus): Closed-loop event
 - [x] `bonus/experiment_loop.py` reads `ghost_rate("2024-W01", "unstop")` from the metric layer (no inline SQL), compares to a hardcoded prior-week baseline of 0.182, detects the +10.93pp delta (above threshold), writes the proposal JSON + Notion stand-in + an `experiment_proposed` event into the same `raw/agent_actions.ndjson` event stream the data lives in.
@@ -84,8 +88,33 @@ Ship the IndiaStox weekend-brief prototype (per `IndiaStox_Agent_Native_Analytic
 - Which second model for cross-model verification on the position paper.
 - Should the deferred-join pattern be modeled as a separate event table or as a self-join on the events stream?
 
-## Review (filled at end)
+## Review
 
-- What shipped:
-- What's left:
-- Lessons for `lessons.md`:
+### What shipped (scope grew well past the original 7 phases)
+
+- **Phases 1–7** of the original weekend brief: all 7 complete (Phase 5 + 6 carry handoff notes for manual Metabase + cross-model verification, the only items not done IN the repo).
+- **Layers A–E** (added in a second pass): eval harness with auto-improvement loop, Glicko-2 skill estimator, typed-confidence chain via `@tool_result` + `core/confidence.py`, agent_actions + proposals tables, full proposal lifecycle pending → approved.
+- **Layers F–I** (added in a third pass): eval-loop closure (auto-improvement after every `make eval`), CS Agent + interventions pipeline, metric-version ledger + `make reproduce` (bit-exact replay with drift detection), evidence-based position paper generator.
+- **Reviewer-feedback polish** (final pass): README stack named, four brief metrics foregrounded via `make metric M=...`, dashboard rendered (markdown tables + Metabase API seed), Q4 backfill added, Q2 softened, DEMO.md re-ordered to lead with substance.
+
+### What's left
+
+- **Manual Metabase bring-up** (Phase 5 handoff): `docker compose up -d` + DuckDB driver + `make dashboard-seed`. Two minutes if the JAR is downloaded.
+- **Cross-model verification** (Phase 6 handoff): paste the three CLAIMs from POSITION_PAPER.md into a second-lineage model; ratify or revise. ~5 minutes.
+
+### Numbers (final, committed state)
+
+- Eval: **27/30** (FM6: agent did NOT score 28+; deliberately self-limiting).
+- Failure modes: **10/10 PASS**.
+- Metric tests: 12/12.
+- 11 metrics registered in `metric_versions`, all at v1.0.0.
+- 10 CS interventions, all grounded in real tickers (FM8).
+- Position paper: 1435 words, 100 numeric tokens, 4 falsifiable claims.
+- Git: 6 commits on `main`, pushed to https://github.com/abhishek5878/indiastox_agent.
+
+### Lessons for `lessons.md`
+
+All captured. See the 16 entries currently in `.claude/tasks/lessons.md` — from the Python-3.9 polyfill at the start to the reviewer-feedback lessons added this session (README-as-first-impression, dashboard-as-comments-is-the-harsh-failure-mode, demo-leads-with-substance, eval-reward-honest-uncertainty).
+
+### Status
+**Plan complete.** The next non-trivial work on this repo (real-data integration, productionizing the LLM agent, second-week eval) should archive this task_plan and start a new one.
