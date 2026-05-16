@@ -126,19 +126,18 @@ def run() -> None:
         "",
         "**A prediction is engagement. A pageview is not. A like is not. An email open is not.**",
         "",
-        f"This stance is anchored to two numbers — including one that's honest about "
-        f"the data's current limits:",
+        f"Two anchors:",
         "",
         f"1. The correlation between `n_predictions_week1` and Glicko-2 `mu` is "
-        f"**{corr:.3f}** across {n_skill} users with at least 2 closed outcomes — "
+        f"**{corr:.3f}** across {n_skill} users with at least 2 closed outcomes. "
         + (
-            "essentially noise. The synthetic data does NOT yet support the brief's "
-            "presumed link between activity volume and skill, because outcomes are "
-            "drawn from a random distribution here. I'm calling this out, not papering "
-            "over it: the *real* IndiaStox stream should reveal a correlation; if it "
-            "doesn't, engagement-as-predictions has to be re-justified from first "
-            "principles (loop closure, stake-bearing, deferred join) and not from "
-            "correlation alone."
+            "*This is the architecture, not the causal claim.* The synthetic data "
+            "here draws outcomes from a random distribution, so weak correlation is "
+            "expected by construction; the loop — predictions are typed, outcomes "
+            "are joined deferred, skill is estimated, the agent can reason about "
+            "the chain — is what's actually being demonstrated. The causal validation "
+            "is a Q3-onwards experiment against real data. The loop is the "
+            "deliverable; the conclusion is the user's to make once real outcomes flow."
             if weak_corr
             else "a real positive signal — more predictions → higher skill rating on average."
         ),
@@ -194,6 +193,37 @@ def run() -> None:
         "per quarter for two consecutive quarters, the role is over-specified and "
         "should be merged with Growth Analytics. Reviewable on a calendar.",
         "",
+        "## Q4 — How far back to backfill",
+        "",
+        "**Three horizons, dropping in fidelity:**",
+        "",
+        f"- **Last 4 weeks:** *full* backfill against the current "
+        f"`SCHEMA_VERSION` (1.0.0). Every event re-loaded through the same "
+        f"`identity/resolve.py` pipeline; every metric retroactively cited under "
+        f"a current `definition_hash`. Cost: ~30 seconds per week of synthetic "
+        f"data at this scale (~85K events / week → ~340K total at 4 weeks).",
+        "",
+        f"- **4–12 weeks:** *partial* backfill — only `fact_prediction` + "
+        f"`fact_prediction_outcome` (the deferred join). These two tables have a "
+        f"stable schema across our version history; everything else (PostHog "
+        f"events, Klaviyo, GA4) has had at least one column-shape change in any "
+        f"realistic week-12 history and would force a `breaking_change=True` "
+        f"version bump in `metric_versions`. The prediction-outcome loop is "
+        f"the load-bearing primitive; everything else is recoverable from raw.",
+        "",
+        f"- **> 12 weeks:** *don't backfill into the analytics layer.* Keep raw "
+        f"event archives in cold storage (S3 / Parquet) for ML-training only. "
+        f"Loading them into the metric layer would create the appearance of "
+        f"comparability where definition drift makes the comparison meaningless. "
+        f"This is the same reasoning that motivated `metric_versions` in the "
+        f"first place: comparing numbers across schema-version boundaries lies.",
+        "",
+        "**What would change my mind:** if a legal or product requirement "
+        "demands quarter-over-quarter retention comparison reaching back > 12 "
+        "weeks, the horizon shifts — but the right fix is a parallel `legacy_*` "
+        "table family with its own definition_hash chain, not retro-loading old "
+        "events into the current schema.",
+        "",
         "## The question I would add to this list",
         "",
         "**How do we type the FRESHNESS of model-derived user attributes** — Gyaani "
@@ -233,6 +263,16 @@ def run() -> None:
         f"**FALSIFIABLE BY:** two consecutive quarters in which the human validator "
         f"catches < 3 deviations. At that point automation has subsumed the work and "
         f"the role consolidates into Growth Analytics.",
+        "",
+        f"**CLAIM 4.** Don't backfill events older than 12 weeks into the analytics "
+        f"layer — keep them in cold storage for ML training only. The "
+        f"`metric_versions` ledger makes cross-version comparisons honest, but only "
+        f"if we don't deliberately mix them.  "
+        f"**FALSIFIABLE BY:** a sustained business requirement (legal, board "
+        f"reporting, regulator) for quarter-over-quarter comparisons reaching back "
+        f"> 12 weeks. At that point the right fix is a parallel `legacy_*` "
+        f"table family with its own `definition_hash` chain — not retro-loading "
+        f"old events into the current schema.",
         "",
         "---",
         "",

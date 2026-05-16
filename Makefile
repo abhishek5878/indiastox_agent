@@ -53,6 +53,16 @@ promote-improvement:
 position-paper:
 	python3 -m agent.position_paper_generator
 
+metric:
+	@if [ -z "$(M)" ]; then echo "usage: make metric M=<name>  (or one of: weekly_active_posters, time_to_first_action, unstop_to_participation_rate, ghost_rate)"; exit 2; fi
+	python3 -m agent.print_metric $(M) $(ARGS)
+
+dashboard-panels:
+	python3 -m dashboard.render_panels
+
+dashboard-seed:
+	python3 -m dashboard.seed
+
 all: personas generate resolve skill load test eval cs-run position-paper
 
 clean:

@@ -1,52 +1,63 @@
 # 5-minute Loom script
 
-Run from the repo root. Each segment is a concrete sequence of commands.
-Times are wall-clock targets for the recording.
+Run from the repo root. Each segment is a concrete sequence. Times are
+wall-clock targets for the recording — adjust as you breathe.
+
+> **Open on this file in the editor for the first 5 seconds.** Then run
+> `make all` in a second pane so the pipeline can warm in the background
+> while you talk.
 
 ---
 
-## 0:00 — 0:30  ·  The problem in one sentence
+## 0:00 — 0:25  ·  Frame the substrate in one sentence
 
 ```bash
 duckdb -c "SELECT COUNT(*) FROM read_parquet('data/personas.parquet')"
 # → 2000
-
-# Show one raw Nemotron persona — gives the demo a face.
-python3 -c "import pandas; print(pandas.read_parquet('data/personas.parquet').iloc[0])"
-
-# The five raw sources have NO shared id between them:
-ls raw/
 head -1 raw/unstop_week01.csv          # college_email + browser_fingerprint
 head -1 raw/backend_events.ndjson       # personal_email + device_fingerprint
 ```
 
-> "2,000 synthetic Indian personas. Five sources. No shared key. The
-> question this whole repo answers: how do we resolve identity across
-> these in a way an agent can reason about probabilistically — and how
-> do we evaluate the agent that does the reasoning?"
+> "Two thousand synthetic Indian personas, five raw sources, no shared
+> key between them. The repo answers: how do we resolve identity across
+> those, how does an agent reason about the result probabilistically,
+> and how do we evaluate the agent that does the reasoning."
 
 ---
 
-## 0:30 — 1:30  ·  Three-pass identity resolution, with typed confidence
+## 0:25 — 1:15  ·  The four brief-mandated metrics, one command each
+
+```bash
+make metric M=weekly_active_posters
+make metric M=time_to_first_action
+make metric M=unstop_to_participation_rate
+make metric M=ghost_rate ARGS="--acquisition_source unstop"
+```
+
+> "Every metric in the layer returns a typed MetricResult — value,
+> confidence, sample_n, provenance, window_open, interpretation, plus a
+> sha256 definition_hash. Bare floats from tools raise TypeError at
+> runtime — the contract is enforced, not documented. Same struct the
+> agent reads, the audit trail records, and the eval grades against."
+
+---
+
+## 1:15 — 2:00  ·  Three-pass identity resolution
 
 ```bash
 make resolve
 ```
 
-While the resolve report prints:
+While the report prints:
 
-> "Pass 1 deterministic email match — 1,333 matches at confidence 1.0.
-> Pass 2 fuzzy name+device — 344 matches, confidence band 0.50 to 0.84.
-> Pass 3 anti-merge — 170 blocked pairs."
+> "Pass 1 deterministic email match — 1,333 at confidence 1.0. Pass 2
+> fuzzy name+device — 344 in the 0.50–0.84 band. Pass 3 anti-merge —
+> 170 pairs blocked because they share a device fingerprint with
+> overlapping sessions."
 
-Then drill into one each:
+Then show one each:
 
 ```bash
-# A high-confidence Pass 1 edge.
-duckdb identity/edges.duckdb -c "
-  SELECT entity_id, source_system, source_key, confidence, resolution_method, provenance
-  FROM identity_edge WHERE resolution_method = 'deterministic_email_exact' LIMIT 1"
-
 # A Pass 2 fuzzy edge — name typo bridged by device fingerprint.
 duckdb identity/edges.duckdb -c "
   SELECT confidence, provenance FROM identity_edge
@@ -54,138 +65,159 @@ duckdb identity/edges.duckdb -c "
 
 # An anti-merge — same device, sessions overlap, correctly NOT merged.
 duckdb identity/edges.duckdb -c "
-  SELECT entity_id, source_key, confidence, provenance FROM identity_edge
-  WHERE resolution_method = 'blocked_shared_device' LIMIT 2"
+  SELECT source_key, confidence, provenance FROM identity_edge
+  WHERE resolution_method = 'blocked_shared_device' LIMIT 1"
 ```
 
 ---
 
-## 1:30 — 2:30  ·  Growth Agent answers a question, with calibration
+## 2:00 — 2:45  ·  Dashboard — four panels, real numbers
 
 ```bash
-make load        # materialize metrics → metric_results
-python3 -c "
-from agent.growth_agent import GrowthAgent
-a = GrowthAgent()
-ans = a.answer('Q04', 'What is the week-1 Gyaani graduation rate?')
-print('value:', ans.value)
-print()
-print('calibration:', ans.calibration)
-print()
-print('action:', ans.action)
-"
+make dashboard-panels
 ```
 
-Then show the MetricResult contract being enforced:
+Pan over the four panels printed (or pre-render them and have the
+markdown open):
 
-```bash
-python3 -c "
-from core.confidence import tool_result
-@tool_result
-def bad(): return 0.5
-try: bad()
-except TypeError as e: print(e)
-"
-# → 'Tool 'bad' returned float, expected MetricResult. ...'
+```
+### Panel 1 — Weekly Challenge Funnel (Unstop cohort, strict-subset)
+unstop_registered  → 1368 (100%)
+challenge_signed_up → 1258 (92%)
+made_a_prediction  →  901 (66%)
+outcome_resolved   →  901 (66%)
+
+### Panel 2 — Channel Attribution
+whatsapp_dark: ghost_rate 32.5%, signup_rate 94.2%, ttfa 28.9h
+unstop:        ghost_rate 32.4%, signup_rate 92.0%, ttfa 33.4h
+
+### Panel 3 — Cohort Retention (W01 day-by-day)
+day 0 →  51 (2.5%) ... day 6 → 539 (27.0%)
+
+### Panel 4 — Identity Resolution Quality
+high (≥0.85) 81.6% | medium 17.2% | low 1.2% | blocked 8.5%
 ```
 
-> "Every tool returns typed confidence. Bare floats are rejected at the
-> runtime layer — not a code review convention, an enforced contract."
+> "The same four panels seed Metabase via `make dashboard-seed` — the
+> API path creates the dashboard programmatically once you `docker
+> compose up`. Either way: same numbers, same provenance."
 
 ---
 
-## 2:30 — 3:30  ·  The eval scorecard — honest about what we got right and wrong
+## 2:45 — 3:30  ·  The agent answers, the eval grades, the loop closes
 
 ```bash
 make eval
 ```
 
-While it prints:
+While the scorecard prints:
 
-> "Ten canonical questions. Each scored on accuracy, calibration, action —
-> max 3, total 30. Watch Q03 and Q04 — those are within-1pp definition
-> drift between the metric function and the SQL ground truth. The eval
-> caught what code review missed."
+> "Ten canonical questions, max 3 per question, 30 total. The agent
+> scored 27 of 30. Q03 and Q04 — one-point-something off, a real
+> definition drift between the metric function and the ground-truth SQL.
+> The eval caught what code review missed. Q10, can we estimate week-4
+> retention from one week — the agent says insufficient data, wide CI,
+> propose an incrementality test. That's the right answer, and the eval
+> rewards it."
 
-> "Q10 asks: 'if we double Unstop spend, what's the week-4 retention lift'.
-> The agent answers 'insufficient data, CI [-10pp, +25pp], run a 4-week
-> incrementality test.' That's the right answer. With 1 week of data,
-> any confident point estimate would be wrong. Eval rewards the
-> uncertainty."
+Then point to the auto-generated improvement file:
 
-Highlight: total 27/30. Below the FM6 sanity-check threshold of 28.
+```bash
+head -25 PROPOSED_IMPROVEMENTS.md
+```
+
+> "After every eval, the improvement agent identifies each lost point
+> and proposes a concrete fix. `make promote-improvement LINE=N` logs
+> the human decision to `agent_actions` with `tool_name=self_improvement`.
+> The eval loop closes on itself."
 
 ---
 
-## 3:30 — 4:30  ·  The agent finds the ghost-rate spike and writes a proposal
+## 3:30 — 4:20  ·  Proposal pipeline — finding to action, audited
 
 ```bash
 make bonus
-ls proposals/pending/
+cat proposals/pending/PROP-*.yaml | head -25
 ```
 
-Open the YAML:
+> "Ghost-rate spike of +11pp on the Unstop cohort. The agent wrote a
+> proposal — to YAML, to DuckDB, to the same raw event stream the
+> finding came from. Audit by construction."
 
 ```bash
-cat proposals/pending/PROP-*.yaml | head -40
-```
-
-Then show the audit trail in DuckDB:
-
-```bash
-duckdb warehouse/indiastox.duckdb -c "
-  SELECT proposal_id, status, hypothesis FROM proposals;
-  SELECT action_id, tool_name, downstream_proposal_id
-  FROM agent_actions WHERE downstream_proposal_id IS NOT NULL"
-```
-
-Approve it:
-
-```bash
-PROP=$(ls proposals/pending/ | head -1 | sed 's/.yaml//')
+PROP=$(ls proposals/pending/ | grep -v gitkeep | head -1 | sed 's/.yaml//')
 make approve PROPOSAL_ID=$PROP
-ls proposals/approved/
 duckdb warehouse/indiastox.duckdb -c "SELECT proposal_id, status FROM proposals"
 duckdb warehouse/indiastox.duckdb -c "
-  SELECT tool_name, downstream_proposal_id FROM agent_actions
-  WHERE tool_name LIKE 'proposal_%'"
+  SELECT tool_name FROM agent_actions WHERE downstream_proposal_id = '$PROP'"
 ```
 
-> "Three artifacts. YAML on disk for the human to read. DuckDB row for
-> programmatic queries. An audit-log entry for every agent or human
-> action. The proposal pipeline is not cosmetic — every step is
-> observable."
+> "Pending → approved. Both the YAML and the DuckDB row updated, and a
+> `proposal_approved` agent_action recording who decided what."
 
----
-
-## 4:30 — 5:00  ·  The scorecard, one sentence on what it means
+Now reproducibility:
 
 ```bash
-ls eval/results/
-cat eval/results/run_*.json | python3 -c "
-import sys, json
-data = json.load(sys.stdin)
-print(f\"Total: {data['total_score']}/{data['max_total']}\")
-print(f\"Q10 (counterfactual): {data['results'][9]['scores']}\")
-"
+make reproduce PROPOSAL_ID=$PROP
+# Then simulate definition drift:
+python3 -m bonus.reproduce PROPOSAL_ID=$PROP \
+  --force-stale-hash-for ghost_rate=deadbeef0000000000000000000000000000000000000000000000000000feed
 ```
 
-> "27 out of 30 on the first run. The 3 lost points are: one accuracy
-> mismatch on a 1pp definition drift, one missed calibration marker, one
-> generic action. We didn't tune to the eval. The eval told us what to
-> tune. That's the loop the brief asked for: 'what does this agent is
-> performing look like as a number?' This. 27/30. With audited tool
-> calls, typed confidence, and a proposal-pipeline that actually moves
-> bits."
+> "Six months from now an auditor asks: did the agent really see what
+> it reported? `make reproduce` replays every tool call from the
+> proposal's session and compares result hashes. Bit-exact if nothing
+> changed; a clear diff if the definition has shifted. This is the
+> audit primitive the brief asked for."
 
 ---
 
-## Cheat sheet — full reset and re-run
+## 4:20 — 4:50  ·  The CS Agent — the substrate isn't Growth-only
+
+```bash
+make cs-run
+head -20 interventions/pending/$(ls interventions/pending/ | grep -v gitkeep | head -1)
+```
+
+> "Same metric layer, same identity graph, same proposal pipeline — now
+> serving a different agent archetype. Ten at-risk users, each
+> intervention grounded in their actual tickers and prediction history.
+> Zero re-architecture. The substrate generalizes."
+
+---
+
+## 4:50 — 5:00  ·  Failure-mode harness — the safety net
+
+```bash
+make verify
+# → Failure-mode checks: 10/10 PASS
+```
+
+> "Ten checks. Two of them break the build if the system looks too
+> good — FM6 fails if the agent scores 28+/30 on its own eval, FM9
+> fails if `make reproduce` can't detect simulated drift. A system that
+> breaks itself when it looks too good is the worldview the brief is
+> hiring for."
+
+---
+
+## Bonus mention (10 seconds at the end)
+
+> "Everything you just saw is also the SETUP.md scaffold from the brief
+> — `.claude/CLAUDE.md` carries the rules, `tasks/lessons.md` accumulates
+> corrections, hooks fire on each edit. That's how I'd hand this to the
+> next engineer."
+
+---
+
+## Full reset / re-run
 
 ```bash
 make clean
-make all     # personas + generate + resolve + skill + load + test + eval
+make all                      # all 8 steps incl. eval + cs-run + position-paper
 make bonus
-make approve PROPOSAL_ID=$(ls proposals/pending/ | head -1 | sed 's/.yaml//')
-make verify  # the 7 failure-mode checks
+make approve PROPOSAL_ID=$(ls proposals/pending/ | grep -v gitkeep | head -1 | sed 's/.yaml//')
+make reproduce PROPOSAL_ID=<same>
+make dashboard-panels
+make verify                   # 10/10
 ```

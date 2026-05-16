@@ -1,6 +1,6 @@
 # IndiaStox Weekend — Position Paper
 
-*Evidence-based. Written by Growth Agent (session `sess-30a2977709f8`) on 2026-05-16 16:28 UTC.*
+*Evidence-based. Written by Growth Agent (session `sess-b2c51d87ae11`) on 2026-05-16 17:17 UTC.*
 
 *All numbers cited below come from live tool calls during this session — see the agent_actions table in `warehouse/indiastox.duckdb` for the audit trail. Metric versions referenced: channel_cac_bounds@1.0.0, dark_channel_fraction@1.0.0, get_skill_distribution@1.0.0, ghost_rate@1.0.0, gyaani_graduation_rate@1.0.0, time_to_first_action@1.0.0.*
 
@@ -25,9 +25,9 @@ A spreadsheet cannot do this. It cannot guarantee that a number cited in a Monda
 
 **A prediction is engagement. A pageview is not. A like is not. An email open is not.**
 
-This stance is anchored to two numbers — including one that's honest about the data's current limits:
+Two anchors:
 
-1. The correlation between `n_predictions_week1` and Glicko-2 `mu` is **0.020** across 1039 users with at least 2 closed outcomes — essentially noise. The synthetic data does NOT yet support the brief's presumed link between activity volume and skill, because outcomes are drawn from a random distribution here. I'm calling this out, not papering over it: the *real* IndiaStox stream should reveal a correlation; if it doesn't, engagement-as-predictions has to be re-justified from first principles (loop closure, stake-bearing, deferred join) and not from correlation alone.
+1. The correlation between `n_predictions_week1` and Glicko-2 `mu` is **0.020** across 1039 users with at least 2 closed outcomes. *This is the architecture, not the causal claim.* The synthetic data here draws outcomes from a random distribution, so weak correlation is expected by construction; the loop — predictions are typed, outcomes are joined deferred, skill is estimated, the agent can reason about the chain — is what's actually being demonstrated. The causal validation is a Q3-onwards experiment against real data. The loop is the deliverable; the conclusion is the user's to make once real outcomes flow.
 
 2. The Gyaani graduation rate (identity_confidence ≥ 0.85 AND ≥ 3 predictions) is **27.4%** of the cohort. That's the operational separation between 'acquired' and 'engaged'. A user below that threshold is acquired but not yet evaluable — their phi is too high for any action recommendation to have signal-to-noise the agent can act on.
 
@@ -53,6 +53,18 @@ This role is justified by the numbers below — without a named human, the failu
 
 **What would change my mind:** if the validator catches < 3 schema deviations per quarter for two consecutive quarters, the role is over-specified and should be merged with Growth Analytics. Reviewable on a calendar.
 
+## Q4 — How far back to backfill
+
+**Three horizons, dropping in fidelity:**
+
+- **Last 4 weeks:** *full* backfill against the current `SCHEMA_VERSION` (1.0.0). Every event re-loaded through the same `identity/resolve.py` pipeline; every metric retroactively cited under a current `definition_hash`. Cost: ~30 seconds per week of synthetic data at this scale (~85K events / week → ~340K total at 4 weeks).
+
+- **4–12 weeks:** *partial* backfill — only `fact_prediction` + `fact_prediction_outcome` (the deferred join). These two tables have a stable schema across our version history; everything else (PostHog events, Klaviyo, GA4) has had at least one column-shape change in any realistic week-12 history and would force a `breaking_change=True` version bump in `metric_versions`. The prediction-outcome loop is the load-bearing primitive; everything else is recoverable from raw.
+
+- **> 12 weeks:** *don't backfill into the analytics layer.* Keep raw event archives in cold storage (S3 / Parquet) for ML-training only. Loading them into the metric layer would create the appearance of comparability where definition drift makes the comparison meaningless. This is the same reasoning that motivated `metric_versions` in the first place: comparing numbers across schema-version boundaries lies.
+
+**What would change my mind:** if a legal or product requirement demands quarter-over-quarter retention comparison reaching back > 12 weeks, the horizon shifts — but the right fix is a parallel `legacy_*` table family with its own definition_hash chain, not retro-loading old events into the current schema.
+
 ## The question I would add to this list
 
 **How do we type the FRESHNESS of model-derived user attributes** — Gyaani scores, attribution-modeled conversions, churn forecasts — so an agent reasoning about them knows when the number is too stale to act on?
@@ -69,6 +81,8 @@ Today's prototype already records `definition_hash` and `as_of` on every MetricR
 
 **CLAIM 3.** Growth Ops Analyst (named human) must own the Unstop drop, with Head of Growth as named backup, because the dark fraction is 17.6% — too high to leave to automated checks alone.  **FALSIFIABLE BY:** two consecutive quarters in which the human validator catches < 3 deviations. At that point automation has subsumed the work and the role consolidates into Growth Analytics.
 
+**CLAIM 4.** Don't backfill events older than 12 weeks into the analytics layer — keep them in cold storage for ML training only. The `metric_versions` ledger makes cross-version comparisons honest, but only if we don't deliberately mix them.  **FALSIFIABLE BY:** a sustained business requirement (legal, board reporting, regulator) for quarter-over-quarter comparisons reaching back > 12 weeks. At that point the right fix is a parallel `legacy_*` table family with its own `definition_hash` chain — not retro-loading old events into the current schema.
+
 ---
 
-*Written by Growth Agent session `sess-30a2977709f8`, referencing metric versions: channel_cac_bounds@1.0.0, dark_channel_fraction@1.0.0, get_skill_distribution@1.0.0, ghost_rate@1.0.0, gyaani_graduation_rate@1.0.0, time_to_first_action@1.0.0. Human reviewer: ____*
+*Written by Growth Agent session `sess-b2c51d87ae11`, referencing metric versions: channel_cac_bounds@1.0.0, dark_channel_fraction@1.0.0, get_skill_distribution@1.0.0, ghost_rate@1.0.0, gyaani_graduation_rate@1.0.0, time_to_first_action@1.0.0. Human reviewer: ____*
