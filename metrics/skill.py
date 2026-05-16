@@ -29,7 +29,7 @@ _REPO = Path(__file__).resolve().parents[1]
 if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 
-from core.confidence import MetricResult
+from core.confidence import MetricResult, versioned
 
 WAREHOUSE_DB = _REPO / "warehouse" / "indiastox.duckdb"
 PERSONAS_PARQUET = _REPO / "data" / "personas.parquet"
@@ -188,6 +188,7 @@ def run() -> None:
 # MetricResult-wrapped distribution tool — for the agent.
 # ---------------------------------------------------------------------------
 
+@versioned("1.0.0")
 def get_skill_distribution(channel: Optional[str] = None, cohort: Optional[str] = None) -> MetricResult:
     """Mean / median / std of mu over a filtered subset; high-skill (mu>1600)
     and low-skill (mu<1400) fractions surfaced.

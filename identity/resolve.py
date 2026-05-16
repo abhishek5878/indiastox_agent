@@ -603,6 +603,12 @@ def load_warehouse(
             [o["outcome"], o["pnl_points"], o["accuracy_delta"], _parse_dt(o["resolved_at"]), o["prediction_id"]],
         )
 
+    # Register metric versions in the ledger now that the warehouse is built.
+    con.close()
+    from core.version_registry import register_all
+    register_all()
+    con = duckdb.connect(str(WAREHOUSE_DB), read_only=False)
+
     # audit_log
     con.execute(
         """INSERT INTO audit_log

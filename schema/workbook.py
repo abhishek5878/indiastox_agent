@@ -254,6 +254,31 @@ class Proposals(WorkbookBase):
     status: str  # 'pending' | 'approved' | 'executed' | 'rejected'
 
 
+class MetricVersions(WorkbookBase):
+    """Ledger of every metric definition version ever deployed.
+
+    Populated on startup by `core.version_registry.register_all()` — a row
+    is inserted the FIRST time a (metric_name, definition_hash) pair is
+    seen. Previous active versions are marked deprecated_at = now() so the
+    timeline is queryable.
+
+    Reproducibility hinges on this: a MetricResult cites its
+    `metric_version` + `definition_hash`; `make reproduce` looks the
+    hash up here to detect whether the definition has shifted since.
+    """
+
+    table_name: ClassVar[str] = "metric_versions"
+    primary_key: ClassVar[list[str]] = ["metric_name", "version", "definition_hash"]
+
+    metric_name: str
+    version: str
+    definition_hash: str
+    deployed_at: datetime
+    deprecated_at: Optional[datetime] = None
+    breaking_change: bool
+    change_note: Optional[str] = None
+
+
 ALL_TABLES: list[type[WorkbookBase]] = [
     DimUser,
     DimChallenge,
@@ -264,6 +289,7 @@ ALL_TABLES: list[type[WorkbookBase]] = [
     MetricResults,
     AgentActions,
     Proposals,
+    MetricVersions,
 ]
 
 

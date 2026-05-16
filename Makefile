@@ -1,4 +1,5 @@
-.PHONY: personas generate resolve skill load test eval metabase bonus approve verify all clean
+.PHONY: personas generate resolve skill load test eval metabase bonus approve verify all clean \
+        cs-run cs-approve reproduce promote-improvement position-paper
 
 personas:
 	python3 generate.py --step=personas
@@ -34,9 +35,31 @@ approve:
 verify:
 	python3 verify_failure_modes.py
 
-all: personas generate resolve skill load test eval
+cs-run:
+	python3 agent/cs_agent.py
+
+cs-approve:
+	@if [ -z "$(USER_ID)" ]; then echo "usage: make cs-approve USER_ID=<uid> [REJECT=1]"; exit 2; fi
+	python3 -m bonus.cs_approve USER_ID=$(USER_ID) $(if $(REJECT),--reject)
+
+reproduce:
+	@if [ -z "$(PROPOSAL_ID)" ]; then echo "usage: make reproduce PROPOSAL_ID=<id>"; exit 2; fi
+	python3 -m bonus.reproduce PROPOSAL_ID=$(PROPOSAL_ID)
+
+promote-improvement:
+	@if [ -z "$(LINE)" ]; then echo "usage: make promote-improvement LINE=<N> [REJECT=1]"; exit 2; fi
+	python3 -m bonus.promote_improvement LINE=$(LINE) $(if $(REJECT),--reject)
+
+position-paper:
+	python3 -m agent.position_paper_generator
+
+all: personas generate resolve skill load test eval cs-run position-paper
 
 clean:
-	rm -rf data/personas.parquet data/skill_ratings.parquet raw/*.csv raw/*.ndjson \
+	rm -rf data/personas.parquet data/skill_ratings.parquet data/proposed_improvements.json \
+	       raw/*.csv raw/*.ndjson \
 	       identity/edges.duckdb warehouse/indiastox.duckdb \
-	       proposals/pending/* proposals/approved/* proposals/executed/* proposals/rejected/*
+	       proposals/pending/*.yaml proposals/approved/*.yaml \
+	       proposals/executed/*.yaml proposals/rejected/*.yaml \
+	       interventions/pending/*.yaml interventions/approved/*.yaml interventions/rejected/*.yaml \
+	       PROPOSED_IMPROVEMENTS.md

@@ -48,12 +48,19 @@ bonus/notion/
 metabase_data/
 plugins/
 
-# Proposal pipeline artifacts — runtime state, not source.
+# Proposal + intervention pipeline artifacts — runtime state, not source.
 # Keep the .gitkeep placeholders so the directory structure ships with git.
 proposals/pending/*.yaml
 proposals/approved/*.yaml
 proposals/executed/*.yaml
 proposals/rejected/*.yaml
+interventions/pending/*.yaml
+interventions/approved/*.yaml
+interventions/rejected/*.yaml
+
+# Agent-written artifacts that regenerate on each eval run.
+PROPOSED_IMPROVEMENTS.md
+data/proposed_improvements.json
 
 # Python build/test
 .pytest_cache/

@@ -55,6 +55,32 @@ Categories: STYLE, GIT, SCOPE, TOOL, VERIFICATION, PLAN, INDIASTOX, AGENT.
   confidence floor. FM5 in `verify_failure_modes.py` enforces this:
   ≥ 20% of metrics must dip below 0.8.
 
+- 2026-05-16 [VERIFICATION] A bit-exact reproducibility check
+  (compare result_hash + definition_hash) is the only way to catch
+  silent metric-definition drift between when a proposal was made
+  and when an auditor reviews it months later. Cheap: one extra
+  field on MetricResult, one ledger table, one `make reproduce`
+  command. Without it, every dashboard number is a "trust me" the
+  agent has no way to retract.
+
+- 2026-05-16 [AGENT] When the data doesn't support the brief's
+  intuitive answer (e.g. correlation between activity and skill
+  came back at 0.02, not 0.67), the agent must say so. The position
+  paper now leads with that disagreement instead of papering over
+  it. Rule: if the cited number contradicts the position, restate
+  the position with the qualifier — never hide the number.
+
+- 2026-05-16 [LOOP] The eval-loop closes on itself when the
+  improvement pass is *auto-triggered* after every eval run, not
+  when it's a separate command the user must remember. Put the
+  closure in the make target, not the runbook.
+
+- 2026-05-16 [SCOPE] At-risk-user criteria specified in absolute
+  terms (e.g. `phi > 300`) drift apart from the actual data
+  distribution as the estimator matures. Use percentile thresholds
+  (e.g. `phi >= 75th percentile`) so the criterion stays meaningful
+  as the data evolves. The data tells you what "high" means.
+
 ## How to use this file
 
 - Skim at session start (read automatically via the `plan` skill).

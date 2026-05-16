@@ -23,7 +23,7 @@ _REPO = Path(__file__).resolve().parents[1]
 if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 
-from core.confidence import MetricResult, identity_confidence_summary
+from core.confidence import MetricResult, identity_confidence_summary, versioned
 
 REPO = _REPO
 WAREHOUSE_DB = REPO / "warehouse" / "indiastox.duckdb"
@@ -66,6 +66,7 @@ def _window_penalty(window_open: bool) -> float:
 # 1. weekly_active_posters
 # ---------------------------------------------------------------------------
 
+@versioned("1.0.0")
 def weekly_active_posters(week_of: str, min_identity_confidence: float = 0.70) -> MetricResult:
     """Users who made >= 1 prediction in ISO week `week_of`, gated by identity_confidence."""
     start, end = _week_bounds(week_of)
@@ -127,6 +128,7 @@ def weekly_active_posters(week_of: str, min_identity_confidence: float = 0.70) -
 # 2. time_to_first_action
 # ---------------------------------------------------------------------------
 
+@versioned("1.0.0")
 def time_to_first_action(week_of: str, acquisition_source: str = "all") -> MetricResult:
     """Median hours from challenge_signup to first prediction_made."""
     start, end = _week_bounds(week_of)
@@ -229,6 +231,7 @@ def time_to_first_action(week_of: str, acquisition_source: str = "all") -> Metri
 # 3. unstop_to_participation_rate
 # ---------------------------------------------------------------------------
 
+@versioned("1.0.0")
 def unstop_to_participation_rate(week_of: str) -> MetricResult:
     """challenge_participation count / challenge_signup count for Unstop cohort."""
     start, end = _week_bounds(week_of)
@@ -298,6 +301,7 @@ def unstop_to_participation_rate(week_of: str) -> MetricResult:
 # 4. ghost_rate
 # ---------------------------------------------------------------------------
 
+@versioned("1.0.0")
 def ghost_rate(week_of: str, acquisition_source: str = "all") -> MetricResult:
     """Users in cohort with zero predictions in 7 days of signup."""
     start, end = _week_bounds(week_of)
@@ -421,6 +425,7 @@ def ghost_rate(week_of: str, acquisition_source: str = "all") -> MetricResult:
 # 5. dark_channel_fraction — what % of signups have no UTM / dark channel
 # ---------------------------------------------------------------------------
 
+@versioned("1.0.0")
 def dark_channel_fraction(week_of: str) -> MetricResult:
     """Fraction of W01 signups attributed to whatsapp_dark (no UTM, no email)."""
     start, end = _week_bounds(week_of)
@@ -466,6 +471,7 @@ def dark_channel_fraction(week_of: str) -> MetricResult:
 # 6. channel_cac_bounds — bounded CAC for dark channel
 # ---------------------------------------------------------------------------
 
+@versioned("1.0.0")
 def channel_cac_bounds(
     week_of: str,
     unstop_spend_rupees: float = 250_000.0,
@@ -533,6 +539,7 @@ def channel_cac_bounds(
 # 7. brier_score — mean Brier for closed predictions in W01
 # ---------------------------------------------------------------------------
 
+@versioned("1.0.0")
 def brier_score(week_of: str) -> MetricResult:
     """Mean Brier score for W01 predictions with closed outcomes.
 
@@ -595,6 +602,7 @@ def brier_score(week_of: str) -> MetricResult:
 # 8. gyaani_graduation_rate
 # ---------------------------------------------------------------------------
 
+@versioned("1.0.0")
 def gyaani_graduation_rate(week_of: str, acquisition_source: str = "all") -> MetricResult:
     """Fraction of cohort that 'graduated' Gyaani in week 1.
 
@@ -663,6 +671,7 @@ def gyaani_graduation_rate(week_of: str, acquisition_source: str = "all") -> Met
 # 9. predictions_per_user — distribution
 # ---------------------------------------------------------------------------
 
+@versioned("1.0.0")
 def predictions_per_user(week_of: str, acquisition_source: str = "all", threshold: int = 5) -> MetricResult:
     """Fraction of cohort with >= threshold predictions in W01."""
     start, end = _week_bounds(week_of)
@@ -717,6 +726,7 @@ def predictions_per_user(week_of: str, acquisition_source: str = "all", threshol
 # 10. email_click_to_signup — Klaviyo campaign performance
 # ---------------------------------------------------------------------------
 
+@versioned("1.0.0")
 def email_click_to_signup() -> MetricResult:
     """Click-to-signup rate per Klaviyo campaign.
 

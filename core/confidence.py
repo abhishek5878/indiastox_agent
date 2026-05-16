@@ -1,22 +1,14 @@
-"""Typed confidence — the canonical MetricResult.
+"""Typed confidence — the canonical MetricResult + the versioning layer.
 
-Every tool the agent calls returns one of these. Bare floats are rejected
-at the tool boundary via the `@tool_result` decorator below — the contract
-is enforced, not documented.
+Every tool the agent calls returns a MetricResult. Bare floats are rejected
+at the tool boundary via the `@tool_result` decorator — the contract is
+enforced, not documented.
 
-The shape carries:
-- value          : the number itself
-- confidence     : a 0..1 summary the agent treats as load-bearing
-- sample_n       : underlying sample size — small N → wide CI even if confidence is high
-- provenance     : list of one-line strings naming the sources / breakdowns
-                   that fed this number (e.g. "deterministic_match:1567")
-- window_open    : True if a deferred join hasn't fully resolved yet
-- interpretation : a single human-readable caveat the agent surfaces verbatim
-
-Plus audit fields preserved from the earlier shape:
-- metric_name, definition_version, computation_sql, as_of, breakdowns,
-  confidence_interval (the numeric tuple — agent uses `confidence` summary,
-  audits use the interval).
+Every MetricResult also carries `metric_version` (e.g. "ghost_rate@1.0.0")
+and `definition_hash` (sha256 of the function source at import time). These
+are filled automatically by the `@versioned("1.0.0")` decorator so the
+audit trail records WHICH definition produced each number — the bedrock
+of `make reproduce`.
 """
 from __future__ import annotations
 
@@ -42,6 +34,10 @@ class MetricResult(BaseModel):
     provenance: list[str]
     window_open: bool
     interpretation: str
+
+    # Versioning (filled by @versioned decorator — Layer H).
+    metric_version: str = ""    # e.g. "ghost_rate@1.0.0"
+    definition_hash: str = ""   # sha256 of function source at import time
 
     # Audit-trail fields (preserved from the v1 shape).
     definition_version: str = "1.0.0"
@@ -117,6 +113,59 @@ def tool_result(func: Callable[..., Any]) -> Callable[..., MetricResult]:
 
     _wrapped.__is_tool__ = True  # type: ignore[attr-defined]
     return _wrapped
+
+
+# ---------------------------------------------------------------------------
+# Versioning — Layer H
+# ---------------------------------------------------------------------------
+
+def _hash_source(func: Callable[..., Any]) -> str:
+    try:
+        src = inspect.getsource(func)
+    except (OSError, TypeError):
+        src = func.__name__
+    return hashlib.sha256(src.encode()).hexdigest()
+
+
+# Module-level registry — keyed by metric_name → (version, hash).
+# Populated by @versioned and read by `core.version_registry`.
+VERSION_REGISTRY: dict[str, tuple[str, str]] = {}
+
+
+def versioned(version: str = "1.0.0") -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    """Stamps `metric_version` and `definition_hash` on every MetricResult.
+
+    Usage:
+
+        @versioned("1.0.0")
+        def ghost_rate(...): ...
+
+    Reads `inspect.getsource()` at import time so the hash is stable across
+    runs. The decorator is idempotent with `@tool_result`: apply both
+    (versioned outermost) and stamping happens after the type-check.
+    """
+
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        h = _hash_source(func)
+        name = func.__name__
+        VERSION_REGISTRY[name] = (version, h)
+
+        @functools.wraps(func)
+        def _wrapped(*args, **kwargs):
+            out = func(*args, **kwargs)
+            if isinstance(out, MetricResult):
+                # Stamp in place (BaseModel allows attribute assignment by
+                # default in Pydantic 2 unless `frozen=True`).
+                out.metric_version = f"{name}@{version}"
+                out.definition_hash = h
+            return out
+
+        _wrapped.__version__ = version  # type: ignore[attr-defined]
+        _wrapped.__definition_hash__ = h  # type: ignore[attr-defined]
+        _wrapped.__metric_name__ = name  # type: ignore[attr-defined]
+        return _wrapped
+
+    return decorator
 
 
 # Helper: combine identity-confidence stats from dim_user into a metric-level

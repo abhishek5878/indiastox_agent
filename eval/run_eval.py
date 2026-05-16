@@ -148,7 +148,18 @@ def run() -> dict:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--json", action="store_true", help="output the full payload to stdout")
+    parser.add_argument("--no-improvement-pass", action="store_true",
+                        help="skip the auto-triggered improvement agent")
     args = parser.parse_args()
     payload = run()
+
+    if not args.no_improvement_pass:
+        # Layer F: the eval loop closes on itself. Auto-trigger the
+        # improvement agent so a fresh PROPOSED_IMPROVEMENTS.md lands
+        # right next to the scorecard.
+        print()
+        from agent.improvement_agent import run as run_improvement
+        run_improvement()
+
     if args.json:
         print(json.dumps(payload, indent=2, default=str))
