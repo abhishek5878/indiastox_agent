@@ -1,0 +1,37 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Secrets / env
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs/
+
+# Build / cache
+node_modules/
+dist/
+build/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Claude Code runtime state
+# - keep .claude/skills, .claude/agents, .claude/hooks, .claude/settings.json, .claude/tasks/*.md, .claude/CLAUDE.md
+# - drop ephemeral run artifacts
+.claude/runs/
+.claude/logs/
+.claude/cache/
