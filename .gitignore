@@ -35,3 +35,19 @@ venv/
 .claude/runs/
 .claude/logs/
 .claude/cache/
+
+# Weekend prototype generated artifacts (regeneratable from generate.py)
+data/personas.parquet
+raw/*.csv
+raw/*.ndjson
+identity/edges.duckdb
+warehouse/indiastox.duckdb
+bonus/proposals/
+bonus/notion/
+metabase_data/
+plugins/
+
+# Python build/test
+.pytest_cache/
+__pycache__/
+*.pyc

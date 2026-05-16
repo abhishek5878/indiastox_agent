@@ -2,13 +2,17 @@
 
 IndiaStox is a consumer prediction platform where every user action is also a bet the market scores. The Gyaani reputation system collapses accuracy into social capital, feed weight, and discovery. This repo is the **agent-native analytics substrate** that backs it — event taxonomy, identity graph with typed confidence, versioned metric semantic layer, and a tool surface that Growth/Product/CS agents call as their I/O. Dashboards are degraded reads of that surface, not the product.
 
-## Stack
+## Stack (Phase 1 = weekend prototype)
 
-- Language: **TBD** — pending the §6 position paper on storage shape.
-- Framework: TBD.
-- Database / warehouse: TBD (candidates: Postgres-only, ClickHouse, Iceberg + DuckDB, warehouse + serving layer).
-- Deploy: TBD.
-- Critical: every metric defined once and tool-callable; identity confidence typed; every agent action is also an event.
+- Language: **Python 3.9+** (system Python is 3.9.6; use `from __future__ import annotations` for modern type-hint syntax).
+- Schema modeling: **Pydantic 2.x**. Single source of truth: Pydantic models, DDL generated from them.
+- Warehouse / serving (prototype): **DuckDB** (file-based, embedded). Decision rationale + migration story is in `POSITION_PAPER.md`.
+- Dashboard: **Metabase** (Docker, via `docker-compose.yml`), reading DuckDB through the JDBC driver.
+- Identity stitching: **rapidfuzz** for name similarity; confidence is always a typed float, never a boolean.
+- Test framework: **pytest**.
+- Critical invariants: every metric defined once and tool-callable; identity confidence typed; every agent action is also an event; modeled numbers carry version.
+
+Production stack (warehouse + serving layer at 500M events) is a deliberate later decision — see `POSITION_PAPER.md` for the migration story.
 
 ## Code style
 

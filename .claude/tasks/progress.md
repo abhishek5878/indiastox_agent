@@ -75,3 +75,37 @@ Phase 3 complete.
 
 ### Status
 Phase 4 complete. All 13 SETUP.md §10 checklist items shipped.
+
+## 2026-05-16 — Weekend prototype (synthetic substrate end-to-end)
+
+### Actions taken
+- Stack decision landed: Python 3.9+, Pydantic 2, DuckDB, Metabase. CLAUDE.md stack section rewritten.
+- Six-tab Pydantic-as-code schema in `schema/workbook.py` with `generate_ddl()` and a version + changelog.
+- `generate.py` end-to-end: 2,000 personas sampled deterministically from `nvidia/Nemotron-Personas-India` (en_IN split). Five raw sources + deferred outcomes shipped to `raw/`.
+- `identity/resolve.py`: 3-pass pipeline writing `identity/edges.duckdb` (4140 edges) and the warehouse `dim_user` / facts. Resolution stats: 78.35% high-conf / 20.15% medium / 1.5% low / 200 blocked.
+- `metrics/definitions.py` + `test_metrics.py`: four metric functions + 12 passing tests, every metric returning typed `MetricResult` with definition_version, is_complete, computation_sql.
+- `load_metrics_to_db.py` materializes metrics to `metric_results` for Metabase. Built-in audit rejects inline metric SQL outside `metrics/`.
+- `docker-compose.yml`: Metabase + DuckDB JDBC driver mount. Four dashboard questions specified inline.
+- `bonus/experiment_loop.py`: rule-based loop reads `ghost_rate` from the metric layer, detects the +10.93pp spike vs hardcoded prior baseline, writes proposal JSON + Notion md + appends an `experiment_proposed` event to `raw/agent_actions.ndjson`.
+- `POSITION_PAPER.md`: 1007 words. Three brief §6 questions answered + one added (typed freshness on model-derived attributes).
+- `verify_failure_modes.py`: all 4/4 checks PASS — determinism, defined-once rule, deferred join (Δ=5d), shared-device anti-merge (200/200).
+
+### Files modified
+- `requirements.txt`, `Makefile`, `.gitignore`, `.claude/CLAUDE.md` (stack section).
+- `schema/workbook.py` (+ `__init__.py`).
+- `generate.py`.
+- `identity/resolve.py` (+ `__init__.py`).
+- `metrics/{definitions,test_metrics}.py` (+ `__init__.py`).
+- `load_metrics_to_db.py`, `docker-compose.yml`.
+- `bonus/experiment_loop.py` (+ `__init__.py`), `bonus/proposals/`, `bonus/notion/`.
+- `verify_failure_modes.py`.
+- `POSITION_PAPER.md`.
+- Generated (gitignored): `data/personas.parquet`, `raw/*`, `identity/edges.duckdb`, `warehouse/indiastox.duckdb`.
+
+### Issues encountered
+- `from types import UnionType` only exists in Python 3.10+; fixed with a Python-3.9-compatible polyfill in `schema/workbook.py`.
+- `python3 identity/resolve.py` (and `bonus/experiment_loop.py`) failed `import schema` / `import metrics` because `sys.path[0]` is the script's directory, not the repo root. Fixed by prepending repo root in each entry-point script.
+- Initial test invariant `ghost_rate + unstop_to_participation_rate ≤ 1.0` is only true when the two metrics share a denominator; they don't (cohort vs challenge_signup). Replaced with a count-level disjoint test using breakdowns. Lesson candidate.
+
+### Status
+Weekend prototype shipped. Manual steps remaining: bring up Metabase + DuckDB driver + build four saved questions; cross-model verification on the position paper.

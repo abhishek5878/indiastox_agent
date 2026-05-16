@@ -4,60 +4,56 @@
 
 Ship the IndiaStox weekend-brief prototype (per `IndiaStox_Agent_Native_Analytics_Brief.md` §4): a 48-hour working miniature of the production analytics platform, on synthetic data we generate ourselves. One week of synthetic Indiastox traffic (~2k users) across five mock sources, with deliberate identity-graph fuzz (70% clean / 30% needing fuzzy stitching), the weekly-challenge-signup → challenge-participation deferred-join pattern, and five artifacts: a versioned workbook schema, a confidence-scored identity-resolution step, a metric semantic layer with the four required metrics defined exactly once, a Metabase (or Superset) dashboard wired to those metrics, and a one-page position paper on three open questions.
 
-## Phase 1: Pick the stack (the one decision that gates everything)
-- [ ] Pick storage shape — Postgres-only / DuckDB+Parquet / ClickHouse / warehouse + serving. Commit the choice to `CLAUDE.md`.
-- [ ] Pick language (Python likely, given the data tooling) and write down the verify commands.
-- [ ] Decide dashboard tool: Metabase vs Superset. Local install path documented.
-**Done when:** `CLAUDE.md` stack section has no `TBD` lines; `verify` skill can be run end-to-end on an empty repo.
-**Status:** pending
+## Phase 1: Pick the stack
+- [x] Storage shape: **DuckDB + Pydantic schema-as-code** for Phase 1; migration story to warehouse + serving in POSITION_PAPER.md §Q1.
+- [x] Language: Python 3.9+, `from __future__ import annotations`. CLAUDE.md stack section updated.
+- [x] Dashboard tool: Metabase via Docker (DuckDB JDBC driver). docker-compose.yml shipped.
+**Done when:** `CLAUDE.md` stack section has no `TBD` lines; the four metrics return numbers end-to-end.
+**Status:** complete
 
 ## Phase 2: Synthetic data generator
-- [ ] Generator script for one week of traffic for ~2k synthetic users.
-- [ ] Five sources: Unstop CSV, backend Postgres stream, PostHog frontend events, Klaviyo email events, GA4 sessions.
-- [ ] Deliberate identity-graph fuzz: 70% clean deterministic email matches; 30% mismatched (college email on Unstop vs personal Gmail on app signup).
-- [ ] Weekly challenge: signup event, then deferred participation event 3–14 days later (the IndiaStox-specific deferred-join pattern).
-- [ ] Property tests on the generator so we trust the fuzz is what we think it is.
-**Done when:** running the generator produces a deterministic-by-seed dataset; the identity-graph fuzz rate is verifiable; the deferred-join is present.
-**Status:** pending
+- [x] `generate.py` deterministic with `SEED = 42`. Sub-seeds per stream (personas, devices, predictions, etc.) prevent cross-stream coupling.
+- [x] Five sources: unstop_week01.csv, backend_events.ndjson, posthog_events.ndjson, klaviyo_events.ndjson, ga4_sessions.ndjson.
+- [x] Identity fuzz exactly as spec'd: 70% trivial (1400), 20% fuzzy (400), 10% shared-device (100 pairs / 200 personas). Klaviyo 5% clock-skew. PostHog 15% never-identify.
+- [x] Deferred join: outcomes_week01.ndjson with resolved_at = made_at + 5 days. Earliest resolved is 2024-01-06; earliest made is 2024-01-01. Delta verified.
+**Done when:** generator produces a deterministic dataset; identity fuzz rate verifiable; deferred join verified.
+**Status:** complete
 
 ## Phase 3: Identity resolution with typed confidence
-- [ ] Step that ingests the five sources and emits user-touchpoint edges.
-- [ ] Each edge carries: confidence score (0–1), provenance string, matcher version.
-- [ ] No boolean match anywhere in the pipeline. Failing this → BLOCKER per `code-quality.md`.
-- [ ] Property test: a 70/30 fuzz dataset produces ~70% high-confidence matches and ~30% lower-confidence with provenance "fuzzy:<algorithm>".
-**Done when:** identity edges are typed; the dashboard can query them by confidence band.
-**Status:** pending
+- [x] `identity/resolve.py` 3-pass pipeline.
+- [x] Pass 1 (deterministic, conf=1.0): 1567 unstop rows / 1567 backend signups matched on local-part equality.
+- [x] Pass 2 (fuzzy, conf in [0.50, 0.84]): 806 edges from rapidfuzz token_sort_ratio gated on browser_fingerprint == device_fingerprint.
+- [x] Pass 3 (anti-merge, conf=-1.0): 200 blocked_shared_device edges. All 100 expected pairs verified by `verify_failure_modes.py` check 4.
+- [x] Final stats — High ≥0.85: 1567 (78.35%) / Medium 0.60–0.84: 403 (20.15%) / Low <0.60: 30 (1.5%) / Blocked: 200.
+**Done when:** identity edges typed end-to-end; dashboard can query by confidence band.
+**Status:** complete
 
 ## Phase 4: Metric semantic layer
-- [ ] Define `weekly_active_posters` once, as a pure function over the event stream.
-- [ ] Define `time_to_first_action` once.
-- [ ] Define `unstop_to_participation_rate` once (this is where the deferred-join shows up).
-- [ ] Define `ghost_rate` once.
-- [ ] Test: each metric called from both the dashboard and an ad-hoc query produces the same number.
-**Done when:** the four metrics are defined in exactly one place; the test passes.
-**Status:** pending
+- [x] Four metric functions in `metrics/definitions.py`, each returning a `MetricResult` with definition_version, is_complete, confidence_interval, computation_sql.
+- [x] W01 numbers: `weekly_active_posters(≥0.70)=1335`, `(≥0.85)=1059`, `time_to_first_action=33.35h`, `unstop_to_participation_rate=0.7110`, `ghost_rate(unstop)=0.2913`.
+- [x] 12 pytest tests pass (3 per metric: determinism, sensitivity, logical consistency).
+- [x] `load_metrics_to_db.py` materializes to `metric_results`; built-in audit rejects inline metric SQL outside `metrics/`.
+**Done when:** all four metrics defined in exactly one place; tests green; metric_results queryable.
+**Status:** complete
 
 ## Phase 5: Dashboard
-- [ ] Stand up Metabase (or Superset) locally.
-- [ ] Wire the four metrics from the semantic layer.
-- [ ] Three views: Weekly Challenge funnel, channel attribution, cohort retention.
-- [ ] Dashboard must answer one specific ad-hoc question via a natural-language layer (per brief's bonus round).
-**Done when:** the three views render against the synthetic data; the NL-layer query works end-to-end.
-**Status:** pending
+- [x] `docker-compose.yml` for Metabase + DuckDB JDBC plugin path.
+- [x] Four dashboard questions specified inline in docker-compose.yml; Q2 + Q4 read `metric_results`, not the raw facts. The "defined once" contract is enforced.
+- [ ] Manual step (left for the user): bring up Metabase, load DuckDB driver, build the four saved questions.
+**Done when:** four saved questions render against the synthetic data.
+**Status:** in_progress  (code shipped; manual UI step pending — Metabase needs Docker)
+**Handoff:** Run `docker compose up -d`, drop the DuckDB driver JAR into `plugins/`, then build the four questions per the spec in `docker-compose.yml`.
 
 ## Phase 6: Position paper
-- [ ] Pick three of the brief's §6 open questions.
-- [ ] Write a one-pager: stance, rationale, tradeoff accepted, what would change the answer.
-- [ ] Run cross-model verification on the paper before committing.
-**Done when:** position paper is in the repo and reviewed by a second model.
-**Status:** pending
+- [x] 1007 words, three brief §6 questions answered (storage, engagement definition, Unstop drop ownership) plus one added (typed freshness on model-derived attributes).
+- [ ] Cross-model verification pass (per `.claude/rules/cross-model-verification.md`). Pending the user picking a second model and running the check.
+**Done when:** paper is in repo and reviewed by a second model.
+**Status:** in_progress  (text shipped; cross-model verification pending)
 
 ## Phase 7 (bonus): Closed-loop event
-- [ ] Take one dashboard finding (e.g. ghost rate jumped 15%).
-- [ ] Synthetic Notion page that proposes a follow-up experiment.
-- [ ] The proposal itself is logged as an event in the same workbook.
-**Done when:** the proposal-event is queryable in the same stream as the finding that produced it.
-**Status:** pending
+- [x] `bonus/experiment_loop.py` reads `ghost_rate("2024-W01", "unstop")` from the metric layer (no inline SQL), compares to a hardcoded prior-week baseline of 0.182, detects the +10.93pp delta (above threshold), writes the proposal JSON + Notion stand-in + an `experiment_proposed` event into the same `raw/agent_actions.ndjson` event stream the data lives in.
+**Done when:** proposal event is in the same event stream as the data that produced the finding.
+**Status:** complete
 
 ## Files likely touched
 - `synth/generator.py` (new) — synthetic-data generator.

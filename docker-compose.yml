@@ -1,0 +1,52 @@
+services:
+  metabase:
+    image: metabase/metabase:latest
+    container_name: indiastox_metabase
+    ports:
+      - "3000:3000"
+    environment:
+      MB_DB_FILE: /metabase.db/metabase.db
+    volumes:
+      - ./metabase_data:/metabase.db
+      - ./plugins:/plugins
+      - ./warehouse:/warehouse:ro
+    restart: unless-stopped
+
+# To connect Metabase to DuckDB:
+# 1. `docker compose up -d`
+# 2. Visit http://localhost:3000 and complete the first-run setup.
+# 3. Download the DuckDB driver JAR (https://github.com/AlexR2D2/metabase_duckdb_driver/releases)
+#    into ./plugins/ before bringing the container up.
+# 4. In Metabase: Admin → Databases → Add Database → DuckDB. Path: /warehouse/indiastox.duckdb (read-only).
+# 5. Build four saved questions ONLY against the metric_results table. The dashboard "IndiaStox Weekly"
+#    consumes those four questions.
+#
+# DASHBOARD SPECIFICATION (build manually in the UI):
+#
+# Q1. Weekly Challenge Funnel — bar chart.
+#     SELECT
+#       'unstop_registrations' AS step, COUNT(*) AS n FROM fact_acquisition WHERE touchpoint_source = 'unstop'
+#     UNION ALL SELECT 'challenge_signups', COUNT(*) FROM fact_engagement WHERE event_type = 'challenge_signup'
+#     UNION ALL SELECT 'first_prediction', COUNT(DISTINCT user_id) FROM fact_prediction
+#     UNION ALL SELECT 'outcome_received', COUNT(DISTINCT user_id) FROM fact_prediction WHERE is_outcome_resolved
+#     — NOTE: this is allowed because it's funnel counts, not the four metric values. The four metric
+#     values flow through metric_results.
+#
+# Q2. Channel Attribution — table reading metric_results.
+#     SELECT
+#       SPLIT_PART(breakdown_key, '=', 2) AS acquisition_source,
+#       value AS ghost_rate
+#     FROM metric_results
+#     WHERE metric_name = 'ghost_rate' AND breakdown_key LIKE 'by_source=%'
+#     ORDER BY value DESC
+#
+# Q3. Cohort Retention — heatmap over dim_user + fact_engagement.
+#     (Real retention shows up across multiple weeks; the prototype only has W01, so the heatmap is one row.)
+#
+# Q4. Identity Resolution Quality — stats card.
+#     SELECT
+#       AVG(CASE WHEN identity_confidence >= 0.85 THEN 1 ELSE 0 END) AS high_confidence_pct,
+#       AVG(CASE WHEN identity_confidence BETWEEN 0.60 AND 0.84 THEN 1 ELSE 0 END) AS medium_confidence_pct,
+#       AVG(CASE WHEN identity_confidence < 0.60 THEN 1 ELSE 0 END) AS low_confidence_pct,
+#       SUM(CASE WHEN list_contains(identity_flags, 'blocked_shared_device') THEN 1 ELSE 0 END) * 1.0 / COUNT(*) AS blocked_pct
+#     FROM dim_user
