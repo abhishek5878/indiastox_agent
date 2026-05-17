@@ -1,6 +1,6 @@
 # IndiaStox Weekend — Position Paper
 
-*Evidence-based. Written by Growth Agent (session `sess-b2c51d87ae11`) on 2026-05-16 17:17 UTC.*
+*Evidence-based. Written by Growth Agent (session `sess-e97ae5747e33`) on 2026-05-17 06:23 UTC.*
 
 *All numbers cited below come from live tool calls during this session — see the agent_actions table in `warehouse/indiastox.duckdb` for the audit trail. Metric versions referenced: channel_cac_bounds@1.0.0, dark_channel_fraction@1.0.0, get_skill_distribution@1.0.0, ghost_rate@1.0.0, gyaani_graduation_rate@1.0.0, time_to_first_action@1.0.0.*
 
@@ -65,6 +65,10 @@ This role is justified by the numbers below — without a named human, the failu
 
 **What would change my mind:** if a legal or product requirement demands quarter-over-quarter retention comparison reaching back > 12 weeks, the horizon shifts — but the right fix is a parallel `legacy_*` table family with its own definition_hash chain, not retro-loading old events into the current schema.
 
+## On Goodhart, named
+
+Goodhart is the dominant failure mode of agent-native analytics — when agents optimize against a metric, the metric stops measuring what it originally tracked. We instrument for it from day one with `metric_gameability_index`, the 12th metric, which flags any metric whose `definition_hash` has shifted since first deployment. Today the index is 0.00 across 11 tracked metrics (all stable at v1.0.0); the watchdog is ready, the alarm has not fired. Pair it with the `make reproduce` audit trail and the `metric_versions` ledger: three primitives, one contract — no metric value cited by an agent can drift unobserved.
+
 ## The question I would add to this list
 
 **How do we type the FRESHNESS of model-derived user attributes** — Gyaani scores, attribution-modeled conversions, churn forecasts — so an agent reasoning about them knows when the number is too stale to act on?
@@ -83,6 +87,8 @@ Today's prototype already records `definition_hash` and `as_of` on every MetricR
 
 **CLAIM 4.** Don't backfill events older than 12 weeks into the analytics layer — keep them in cold storage for ML training only. The `metric_versions` ledger makes cross-version comparisons honest, but only if we don't deliberately mix them.  **FALSIFIABLE BY:** a sustained business requirement (legal, board reporting, regulator) for quarter-over-quarter comparisons reaching back > 12 weeks. At that point the right fix is a parallel `legacy_*` table family with its own `definition_hash` chain — not retro-loading old events into the current schema.
 
+**CLAIM 5.** `metric_gameability_index` should be the first metric a reviewer checks at the start of each week. Today it reads 0.00 across the 11 substantive metrics — every definition is at its original hash. The contract is: this number going non-zero is a deploy-time signal, not a backfill-time apology.  **FALSIFIABLE BY:** a week in which an agent measurably outperforms its own eval AND `metric_gameability_index` stays at 0.00 AND the eval has not been edited. If all three hold, either the agent is genuinely better or the watchdog has a blind spot — investigate before celebrating.
+
 ---
 
-*Written by Growth Agent session `sess-b2c51d87ae11`, referencing metric versions: channel_cac_bounds@1.0.0, dark_channel_fraction@1.0.0, get_skill_distribution@1.0.0, ghost_rate@1.0.0, gyaani_graduation_rate@1.0.0, time_to_first_action@1.0.0. Human reviewer: ____*
+*Written by Growth Agent session `sess-e97ae5747e33`, referencing metric versions: channel_cac_bounds@1.0.0, dark_channel_fraction@1.0.0, get_skill_distribution@1.0.0, ghost_rate@1.0.0, gyaani_graduation_rate@1.0.0, time_to_first_action@1.0.0. Human reviewer: ____*

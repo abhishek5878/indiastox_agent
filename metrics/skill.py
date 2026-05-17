@@ -209,6 +209,11 @@ def get_skill_distribution(channel: Optional[str] = None, cohort: Optional[str] 
             provenance=[f"channel:{channel}", "no_users_with_closed_outcomes"],
             window_open=False,
             interpretation=f"No users with >= 2 closed outcomes matched the filter (channel={channel}).",
+            trace=[
+                f"skill_distribution = 1500 (Glicko-2 prior) because no users matched channel={channel} with >= 2 closed outcomes.",
+                f"this is the cold-start signal: an empty filter is information itself — propose data collection, not a point estimate.",
+                f"confidence = 0.00: there is nothing to estimate.",
+            ],
         )
     mean_mu = float(df["mu"].mean())
     median_mu = float(df["mu"].median())
@@ -228,6 +233,11 @@ def get_skill_distribution(channel: Optional[str] = None, cohort: Optional[str] 
         f"(channel={channel or 'all'}). "
         f"High-skill (mu > 1600) = {high_pct:.1%}; low-skill (mu < 1400) = {low_pct:.1%}."
     )
+    trace = [
+        f"skill_distribution mean mu = {mean_mu:.0f} over {n} users (channel={channel or 'all'}); median {median_mu:.0f}, std {std_mu:.0f}.",
+        f"high-skill (mu > 1600): {high_pct:.1%} ({high} users); low-skill (mu < 1400): {low_pct:.1%} ({low}). The brief's 'latent skill curve' is the long tail in both directions.",
+        f"confidence = {confidence:.2f}: scales with n (clamped to 0.95); estimator is simplified Glicko-2 with no volatility update — phi drops faster than a full implementation would justify.",
+    ]
     return MetricResult(
         metric_name="skill_distribution",
         value=mean_mu,
@@ -242,6 +252,7 @@ def get_skill_distribution(channel: Optional[str] = None, cohort: Optional[str] 
         ],
         window_open=False,
         interpretation=interp,
+        trace=trace,
         definition_version="1.0.0",
         breakdowns=dict(mean=mean_mu, median=median_mu, std=std_mu, high_pct=high_pct, low_pct=low_pct, n=n),
     )

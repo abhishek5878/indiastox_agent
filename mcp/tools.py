@@ -37,6 +37,7 @@ from metrics.definitions import (
     gyaani_graduation_rate as _gyaani_graduation_rate,
     predictions_per_user as _predictions_per_user,
     email_click_to_signup as _email_click_to_signup,
+    metric_gameability_index as _metric_gameability_index,
 )
 from metrics.skill import get_skill_distribution as _get_skill_distribution
 
@@ -102,6 +103,11 @@ def get_skill_distribution(channel: Optional[str] = None, cohort: Optional[str] 
     return _get_skill_distribution(channel, cohort)
 
 
+@tool_result
+def metric_gameability_index() -> MetricResult:
+    return _metric_gameability_index()
+
+
 TOOLS: dict[str, Callable[..., MetricResult]] = {
     "weekly_active_posters": weekly_active_posters,
     "time_to_first_action": time_to_first_action,
@@ -114,6 +120,7 @@ TOOLS: dict[str, Callable[..., MetricResult]] = {
     "predictions_per_user": predictions_per_user,
     "email_click_to_signup": email_click_to_signup,
     "get_skill_distribution": get_skill_distribution,
+    "metric_gameability_index": metric_gameability_index,
 }
 
 

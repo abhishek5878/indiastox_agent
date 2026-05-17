@@ -221,3 +221,28 @@ Polish shipped. 6th commit pushed to https://github.com/abhishek5878/indiastox_a
 5. ✅ Handoff: README + DEMO.md + POSITION_PAPER.md are review-grade; the two manual handoffs (Metabase bring-up, cross-model verification on the paper) are documented in task_plan.md Phase 5 and Phase 6 respectively.
 
 The next session opens on a complete deliverable. No work is in_progress without a handoff.
+
+## 2026-05-17 — Layers J–M (trace + critic + calibration + anti-Goodhart)
+
+### Actions taken
+- **Layer J — "Why this number?".** Added `trace: list[str]` to MetricResult. Each of the 12 metric functions now generates a 3-step natural-language trace at evaluation time. `make trace M=<name>` prints just the trace; `make metric M=<name>` shows the full MetricResult including trace. Example for ghost_rate: (1) "0.2867 because 476 of 1660 users in the all cohort made zero predictions through the W01 + 7-day window", (2) "biggest contributor: unstop (391/476 ghosts; per-source rate 28.6% over 1368 users)", (3) "confidence = 0.73 because the identity layer carries 1632 deterministic / 344 probabilistic / 24 low-confidence matches".
+- **Layer K — Critic Agent.** `agent/critic_agent.py` pairs every proposal with its strongest counter-argument BEFORE a human sees it. Auto-invoked from `bonus/experiment_loop.py` so every new YAML lands with a `critique:` section embedded. The critique covers (a) acquisition impact, (b) confounders to rule out (catalogued per-metric — e.g. "exam-season seasonality" for ghost_rate), (c) reversibility cost, (d) a concrete alternative_proposal. `make critique PROPOSAL_ID=...` runs it retrospectively. The current Unstop-pause proposal (12pp expected lift) gets severity=high and a less-destructive creative-A/B alternative.
+- **Layer L — Calibration curve hero image.** `assets/calibration_curve.py` renders `assets/calibration_curve.png` via matplotlib: x = predicted P(WIN) from confidence_stars (0.5–0.9), y = realized accuracy. Diagonal = perfect calibration. The synthetic data shows a flat line at ~0.45 across all five buckets, well below the diagonal — honest, expected, captioned. Embedded as the README hero. `make calibration` regenerates against the live warehouse.
+- **Layer M — `metric_gameability_index`.** 12th metric. Queries `metric_versions` for distinct `definition_hash` counts per metric and reports a global max-gameability score (0 = stable, 0.5 = one redefinition, 1.0 = three+). Today reads 0.00 across 11 substantive metrics. Named, not just measured — the act of instrumenting the failure mode is the value.
+- **Position paper.** Added "On Goodhart, named" paragraph + CLAIM 5 with FALSIFIABLE BY. Position paper now: 5 CLAIMs, 5 FALSIFIABLE BY, ~1630 words, agent-signed.
+- **README.** Calibration curve as hero image at top; layout table now lists Critic Agent + gameability index + calibration with their `make` targets.
+
+### Numbers
+- 12 metric tools registered (was 11); FM5 still passes (6/12 = 50% below 0.8 confidence).
+- All 10 failure modes pass; all 12 metric tests pass; eval still 27/30.
+- Position paper: 5 CLAIMs, 5 FALSIFIABLE BY clauses, ~1630 words.
+
+### Files modified / added
+- New: `agent/critic_agent.py`, `assets/calibration_curve.py`, `assets/calibration_curve.png`.
+- Edited: `core/confidence.py`, `metrics/definitions.py` (all 11 metrics gained traces; 12th added), `metrics/skill.py`, `mcp/tools.py`, `agent/print_metric.py`, `agent/position_paper_generator.py`, `bonus/experiment_loop.py` (auto-pair critic), `Makefile` (new targets: trace, critique, calibration, gameability), `README.md`, `POSITION_PAPER.md`, `verify_failure_modes.py` (FM5 enumerates 12 metrics).
+
+### Issues encountered
+- `print_metric.py` was passing default `week_of` kwarg to metrics that don't take one (`metric_gameability_index`, `email_click_to_signup`). Decorator-chain introspection wasn't walking past `@versioned`; now walks the full `__wrapped__` chain to get the real signature and filters kwargs accordingly.
+
+### Status
+Layers J–M shipped. The substrate now: explains every number in 3 steps; pairs every proposal with its counter-argument; renders the calibration curve as the README hero; instruments its own anti-Goodhart watchdog. 10/10 failure modes pass.

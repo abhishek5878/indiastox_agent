@@ -32,6 +32,10 @@ approve:
 	@if [ -z "$(PROPOSAL_ID)" ]; then echo "usage: make approve PROPOSAL_ID=<id> [REJECT=1|EXECUTE=1]"; exit 2; fi
 	python3 -m bonus.approve PROPOSAL_ID=$(PROPOSAL_ID) $(if $(REJECT),--reject) $(if $(EXECUTE),--execute)
 
+critique:
+	@if [ -z "$(PROPOSAL_ID)" ]; then echo "usage: make critique PROPOSAL_ID=<id>  — runs the Critic Agent against an existing proposal"; exit 2; fi
+	python3 -m agent.critic_agent PROPOSAL_ID=$(PROPOSAL_ID)
+
 verify:
 	python3 verify_failure_modes.py
 
@@ -53,9 +57,27 @@ promote-improvement:
 position-paper:
 	python3 -m agent.position_paper_generator
 
+calibration:
+	python3 assets/calibration_curve.py
+
+gameability:
+	python3 -m agent.print_metric metric_gameability_index
+
 metric:
 	@if [ -z "$(M)" ]; then echo "usage: make metric M=<name>  (or one of: weekly_active_posters, time_to_first_action, unstop_to_participation_rate, ghost_rate)"; exit 2; fi
 	python3 -m agent.print_metric $(M) $(ARGS)
+
+trace:
+	@if [ -z "$(M)" ]; then echo "usage: make trace M=<name>  — prints the 3-step 'why this number?' explanation"; exit 2; fi
+	@python3 -c "import sys; sys.path.insert(0, '.'); from mcp.tools import TOOLS, ToolSession; \
+	  fn = TOOLS.get('$(M)'); \
+	  assert fn, '$(M) not a known tool — see make help-metrics'; \
+	  s = ToolSession(); \
+	  r = s.call('$(M)', **({'week_of':'2024-W01'} if 'week_of' in (fn.__wrapped__.__code__.co_varnames if hasattr(fn,'__wrapped__') else ()) else {})); \
+	  print(f'\\n{r.metric_name} = {r.value}  (v{r.metric_version.split(\"@\")[-1]} | confidence {r.confidence:.2f} | n={r.sample_n})'); \
+	  print(); \
+	  [print(f'  [{i+1}] {s}') for i, s in enumerate(r.trace)]; \
+	  print()"
 
 dashboard-panels:
 	python3 -m dashboard.render_panels

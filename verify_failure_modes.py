@@ -229,6 +229,7 @@ def check_5_confidence_distribution() -> bool:
         weekly_active_posters, time_to_first_action, unstop_to_participation_rate,
         ghost_rate, dark_channel_fraction, channel_cac_bounds, brier_score,
         gyaani_graduation_rate, predictions_per_user, email_click_to_signup,
+        metric_gameability_index,
     )
     from metrics.skill import get_skill_distribution
     W = "2024-W01"
@@ -245,6 +246,7 @@ def check_5_confidence_distribution() -> bool:
         (predictions_per_user, [W]),
         (email_click_to_signup, []),
         (get_skill_distribution, [None, None]),
+        (metric_gameability_index, []),
     ]:
         try:
             r = fn(*args)

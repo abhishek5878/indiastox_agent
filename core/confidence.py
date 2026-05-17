@@ -35,6 +35,15 @@ class MetricResult(BaseModel):
     window_open: bool
     interpretation: str
 
+    # Layer J — "Why this number?". Exactly 3 natural-language steps
+    # explaining HOW the value was produced. Generated at evaluation
+    # time by each metric function and surfaced verbatim to humans /
+    # downstream agents via `make trace M=<name>`. The point is to
+    # answer the brief's "agents must reason about confidence, not
+    # hallucinate certainty" — every metric is a calibrated
+    # explanation, not just a scalar.
+    trace: list[str] = Field(default_factory=list)
+
     # Versioning (filled by @versioned decorator — Layer H).
     metric_version: str = ""    # e.g. "ghost_rate@1.0.0"
     definition_hash: str = ""   # sha256 of function source at import time

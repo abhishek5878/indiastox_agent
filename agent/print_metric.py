@@ -84,11 +84,16 @@ def main() -> None:
 
     kwargs = dict(DEFAULTS)
     kwargs.update(parse_kwargs(rest))
-    # Some tools don't take week_of (email_click_to_signup, get_skill_distribution).
+    # Some tools don't take week_of (email_click_to_signup,
+    # get_skill_distribution, metric_gameability_index). Walk the
+    # decorator chain to find the underlying function and filter kwargs
+    # against its real signature.
     fn = TOOLS[args.metric]
-    fn_params = set(fn.__wrapped__.__code__.co_varnames[: fn.__wrapped__.__code__.co_argcount]) \
-        if hasattr(fn, "__wrapped__") else set()
-    kwargs = {k: v for k, v in kwargs.items() if not fn_params or k in fn_params}
+    target = fn
+    while hasattr(target, "__wrapped__"):
+        target = target.__wrapped__
+    fn_params = set(target.__code__.co_varnames[: target.__code__.co_argcount])
+    kwargs = {k: v for k, v in kwargs.items() if k in fn_params}
 
     session = ToolSession()
     result = session.call(args.metric, **kwargs)
@@ -104,6 +109,10 @@ def main() -> None:
     print(f"  window_open   = {result.window_open}")
     print(f"  provenance    = {result.provenance}")
     print(f"  interpretation: {result.interpretation}")
+    if result.trace:
+        print(f"  trace ('why this number?'):")
+        for i, step in enumerate(result.trace, 1):
+            print(f"    [{i}] {step}")
     print(f"  definition_hash = {result.definition_hash[:16]}...")
     print(f"  audit_session = {session.session_id}")
 

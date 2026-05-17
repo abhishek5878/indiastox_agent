@@ -39,6 +39,7 @@ DEFS = {
     "gyaani_graduation_rate": "1.0.0",
     "predictions_per_user": "1.0.0",
     "email_click_to_signup": "1.0.0",
+    "metric_gameability_index": "1.0.0",
 }
 
 
@@ -107,6 +108,13 @@ def weekly_active_posters(week_of: str, min_identity_confidence: float = 0.70) -
         f"An additional {int(excluded)} probabilistic-match users were excluded — "
         f"the true count is between {int(value)} and {int(value + excluded)}."
     )
+    det = next((int(p.split(":")[1]) for p in id_prov if p.startswith("deterministic_match:")), 0)
+    prob = next((int(p.split(":")[1]) for p in id_prov if p.startswith("probabilistic_match:")), 0)
+    trace = [
+        f"weekly_active_posters = {int(value)} because that many DISTINCT users made >=1 prediction in W01 with identity_confidence >= {min_identity_confidence:.2f}.",
+        f"{int(excluded)} probabilistic-match users were excluded by the gate — the true count is between {int(value)} and {int(value + excluded)}.",
+        f"confidence = {confidence:.2f}: identity floor {id_conf:.2f} ({det} deterministic / {prob} probabilistic, the latter down-weighted 0.5x); window is {'open' if window_open else 'closed'}.",
+    ]
 
     return MetricResult(
         metric_name="weekly_active_posters",
@@ -116,6 +124,7 @@ def weekly_active_posters(week_of: str, min_identity_confidence: float = 0.70) -
         provenance=provenance,
         window_open=window_open,
         interpretation=interp,
+        trace=trace,
         definition_version=DEFS["weekly_active_posters"],
         confidence_interval=(float(value), float(value + excluded)),
         computation_sql=sql.strip(),
@@ -211,6 +220,15 @@ def time_to_first_action(week_of: str, acquisition_source: str = "all") -> Metri
         f"(n={sample_n}, filter={acquisition_source}). "
         + ("Window still open — final number may shift." if window_open else "Window closed.")
     )
+    device_b = breakdowns.get("device_type") or []
+    tier_b = breakdowns.get("city_tier") or []
+    device_phrase = ", ".join(f"{r['value']}={r['median_hours']:.1f}h (n={r['n']})" for r in device_b[:2]) or "n/a"
+    tier_phrase = ", ".join(f"{r['value']}={r['median_hours']:.1f}h (n={r['n']})" for r in tier_b[:2]) or "n/a"
+    trace = [
+        f"time_to_first_action = {median_hours:.1f}h median across {sample_n} users with both challenge_signup AND first prediction events (filter={acquisition_source}).",
+        f"by device: {device_phrase}. by city_tier: {tier_phrase}.",
+        f"confidence = {confidence:.2f}: identity floor {id_conf:.2f}; 72h cohort window is {'open (final shape may shift)' if window_open else 'closed'}.",
+    ]
     return MetricResult(
         metric_name="time_to_first_action",
         value=median_hours,
@@ -219,6 +237,7 @@ def time_to_first_action(week_of: str, acquisition_source: str = "all") -> Metri
         provenance=provenance,
         window_open=window_open,
         interpretation=interp,
+        trace=trace,
         definition_version=DEFS["time_to_first_action"],
         confidence_interval=None,
         computation_sql=sql.strip(),
@@ -281,11 +300,17 @@ def unstop_to_participation_rate(week_of: str) -> MetricResult:
         f"Among {signups} Unstop signups, {participations} predicted within 7 days "
         f"(participation rate {rate:.1%})."
     )
+    trace = [
+        f"unstop_to_participation_rate = {rate:.4f} because {participations}/{signups} Unstop-cohort users predicted within 7 days of their challenge_signup event.",
+        f"7-day window is the deferred-join cutoff (predictions resolve at +5d but the participation event itself = made_at within 7d of signup).",
+        f"confidence = {confidence:.2f}: identity floor {id_conf:.2f}; 72h cohort window is {'open' if window_open else 'closed'}; CI {ci}.",
+    ]
     return MetricResult(
         metric_name="unstop_to_participation_rate",
         value=rate,
         confidence=confidence,
         sample_n=signups,
+        trace=trace,
         provenance=provenance,
         window_open=window_open,
         interpretation=interp,
@@ -399,6 +424,26 @@ def ghost_rate(week_of: str, acquisition_source: str = "all") -> MetricResult:
         f"{ghosts}/{total} ({rate:.1%}) of {acquisition_source} cohort made zero predictions in 7 days. "
         + ("Window still open." if window_open else "Window closed.")
     )
+    # Layer J — "Why this number?" 3-step trace.
+    det = next((int(p.split(":")[1]) for p in id_prov if p.startswith("deterministic_match:")), 0)
+    prob = next((int(p.split(":")[1]) for p in id_prov if p.startswith("probabilistic_match:")), 0)
+    low = next((int(p.split(":")[1]) for p in id_prov if p.startswith("low_confidence:")), 0)
+    if by_source:
+        top = max(by_source, key=lambda r: r["n"] * r["rate"])
+        top_ghosts_for_src = int(top["n"] * top["rate"])
+        breakdown_phrase = (
+            f"biggest contributor: {top['value']} ({top_ghosts_for_src}/{ghosts} ghosts; "
+            f"per-source rate {top['rate']:.1%} over {top['n']} users)"
+        )
+    else:
+        breakdown_phrase = f"single-cohort answer ({acquisition_source} only)"
+    trace = [
+        f"ghost_rate = {rate:.4f} because {ghosts} of {total} users in the {acquisition_source} cohort made zero predictions through the W01 + 7-day window.",
+        f"{breakdown_phrase}.",
+        f"confidence = {confidence:.2f} because the identity layer carries "
+        f"{det} deterministic / {prob} probabilistic / {low} low-confidence matches "
+        f"(probabilistic share is down-weighted 0.5x in the propagation chain).",
+    ]
     return MetricResult(
         metric_name="ghost_rate",
         value=rate,
@@ -407,6 +452,7 @@ def ghost_rate(week_of: str, acquisition_source: str = "all") -> MetricResult:
         provenance=provenance,
         window_open=window_open,
         interpretation=interp,
+        trace=trace,
         definition_version=DEFS["ghost_rate"],
         confidence_interval=None,
         computation_sql=sql.strip(),
@@ -452,6 +498,11 @@ def dark_channel_fraction(week_of: str) -> MetricResult:
         f"{dark}/{total} ({rate:.1%}) of W01 signups are dark (no UTM, no Klaviyo, NULL referral). "
         f"Channel-attribution metrics that ignore this fraction are methodologically suspect."
     )
+    trace = [
+        f"dark_channel_fraction = {rate:.4f} because {dark} of {total} W01 signups have touchpoint_source='whatsapp_dark' (no UTM, no Klaviyo, NULL referral).",
+        f"this is the FLOOR on attribution uncertainty: any channel-attribution claim that doesn't explicitly handle this fraction is methodologically incomplete.",
+        f"confidence = 1.00 because the fraction itself is deterministic given the dim_user / fact_acquisition join; what's uncertain is which TRUE channel each dark signup actually came from.",
+    ]
     return MetricResult(
         metric_name="dark_channel_fraction",
         value=rate,
@@ -460,6 +511,7 @@ def dark_channel_fraction(week_of: str) -> MetricResult:
         provenance=[f"dark_signups:{dark}", f"total_signups:{total}", "definition:touchpoint_source='whatsapp_dark'"],
         window_open=False,
         interpretation=interp,
+        trace=trace,
         definition_version=DEFS["dark_channel_fraction"],
         computation_sql=sql.strip(),
         as_of=_now(),
@@ -511,6 +563,11 @@ def channel_cac_bounds(
         f"to upper ₹{upper_bound:.0f} (paid-referral-quality). True value unknowable "
         f"without attribution improvements (deep linking, opt-in referral tracking)."
     )
+    trace = [
+        f"Unstop CAC = ₹{unstop_cac:.0f} (₹{unstop_spend_rupees:,.0f} spend / {unstop_n} signups). This is the known reference channel.",
+        f"WhatsApp-dark CAC bound: ₹{lower_bound:.0f}–₹{upper_bound:.0f}; midpoint ₹{midpoint:.0f}. {dark_n} dark signups have no attribution data to narrow further.",
+        f"confidence = 0.40 because the BOUNDS are sharp but the point estimate inside them is genuinely uncertain; the right intervention is attribution improvement (deep-link UTM passthrough), not a tighter guess.",
+    ]
     return MetricResult(
         metric_name="channel_cac_bounds",
         value=midpoint,
@@ -526,6 +583,7 @@ def channel_cac_bounds(
         ],
         window_open=False,
         interpretation=interp,
+        trace=trace,
         definition_version=DEFS["channel_cac_bounds"],
         confidence_interval=(lower_bound, upper_bound),
         computation_sql=sql_dark.strip(),
@@ -579,10 +637,16 @@ def brier_score(week_of: str) -> MetricResult:
         f"Mean Brier = {brier:.4f} over {n} closed predictions. "
         f"Lower is better; 0.25 is the random-guess baseline."
     )
+    conf = 0.85 if n >= 500 else 0.60
+    trace = [
+        f"brier_score = {brier:.4f} = mean of (predicted_prob - actual)^2 over {n} W01 predictions with resolved outcomes.",
+        f"probability mapping: confidence_stars 1..5 → 0.5..0.9; actual: WIN=1, LOSS=0, DRAW=0.5. Random-guess baseline = 0.25.",
+        f"confidence = {conf:.2f}: scales with n ({n} closed); below 500 closed predictions the estimate is noisy.",
+    ]
     return MetricResult(
         metric_name="brier_score",
         value=brier,
-        confidence=0.85 if n >= 500 else 0.60,
+        confidence=conf,
         sample_n=n,
         provenance=[
             f"closed_predictions:{n}",
@@ -591,6 +655,7 @@ def brier_score(week_of: str) -> MetricResult:
         ],
         window_open=False,
         interpretation=interp,
+        trace=trace,
         definition_version=DEFS["brier_score"],
         computation_sql=sql.strip(),
         as_of=_now(),
@@ -647,7 +712,13 @@ def gyaani_graduation_rate(week_of: str, acquisition_source: str = "all") -> Met
         f"Gyaani graduation rate = {rate:.1%} ({grads}/{total} {acquisition_source} users "
         f"meet identity_confidence >= 0.85 AND made >= 3 predictions in W01)."
     )
+    trace = [
+        f"gyaani_graduation_rate = {rate:.4f} = {grads}/{total} of the {acquisition_source} cohort.",
+        f"definition is a strict AND of two thresholds: identity_confidence >= 0.85 AND >= 3 predictions in W01.",
+        f"confidence = 0.85 because the AND-rule excludes probabilistic-match bleed; numerator is deterministic given identity resolution.",
+    ]
     return MetricResult(
+        trace=trace,
         metric_name="gyaani_graduation_rate",
         value=rate,
         confidence=0.85,
@@ -706,6 +777,11 @@ def predictions_per_user(week_of: str, acquisition_source: str = "all", threshol
         con.close()
     rate = float(at_t / total) if total else 0.0
     interp = f"{at_t}/{total} ({rate:.1%}) of {acquisition_source} users made ≥ {threshold} predictions in W01."
+    trace = [
+        f"predictions_per_user (>= {threshold}) = {rate:.4f} = {at_t}/{total} of the {acquisition_source} cohort.",
+        f"this is the 'serious engagement' cliff — the brief argues ≥ 3 is where Gyaani signal stabilizes; higher thresholds isolate higher-intent subsets.",
+        f"confidence = 0.90: count is deterministic given identity resolution; the threshold itself is the design knob.",
+    ]
     return MetricResult(
         metric_name="predictions_per_user",
         value=rate,
@@ -715,6 +791,7 @@ def predictions_per_user(week_of: str, acquisition_source: str = "all", threshol
                     f"cohort_size:{total}", f"users_at_threshold:{at_t}"],
         window_open=False,
         interpretation=interp,
+        trace=trace,
         definition_version=DEFS["predictions_per_user"],
         computation_sql=sql.strip(),
         as_of=_now(),
@@ -759,6 +836,11 @@ def email_click_to_signup() -> MetricResult:
         con.close()
     rate = float(signups / clicks) if clicks else 0.0
     interp = f"Campaign {campaign}: {signups}/{clicks} ({rate:.1%}) email clicks led to a tracked signup."
+    trace = [
+        f"email_click_to_signup = {rate:.4f} = {signups} email-matched signups / {clicks} distinct clickers on campaign {campaign}.",
+        f"this is a LOOSE join (any signup whose email matches a clicker), not a strict temporal funnel — rates > 1.0 possible when the same email signed up before clicking.",
+        f"confidence = 0.70: multi-touch ambiguity (was the email the actual driver, or a coincident touchpoint?) bounds trust; replace with a strict temporal funnel for real attribution.",
+    ]
     return MetricResult(
         metric_name="email_click_to_signup",
         value=rate,
@@ -767,8 +849,117 @@ def email_click_to_signup() -> MetricResult:
         provenance=[f"campaign:{campaign}", f"clicks:{clicks}", f"matched_signups:{signups}"],
         window_open=False,
         interpretation=interp,
+        trace=trace,
         definition_version=DEFS["email_click_to_signup"],
         computation_sql=sql.strip(),
         as_of=_now(),
         breakdowns=dict(campaign_id=campaign, clicks=clicks, signups=signups),
+    )
+
+
+# ---------------------------------------------------------------------------
+# 12. metric_gameability_index — anti-Goodhart watchdog (Layer M)
+# ---------------------------------------------------------------------------
+
+@versioned("1.0.0")
+def metric_gameability_index() -> MetricResult:
+    """How gameable is the metric layer right now?
+
+    For each metric currently in the metric_versions ledger:
+      drift_signal = (n_distinct_hashes - 1)  → 0 when stable, 1+ after any redefinition
+      The composite per-metric gameability index = drift_signal * 0.5,
+      capped at 1.0.
+
+    The global index = max across metrics (worst-case is what matters —
+    a single gamed metric breaks the contract for any agent consuming the
+    suite). A future version correlates each hash-transition timestamp
+    with engineering deploys to the underlying tables; today the ledger
+    is the signal, and the act of NAMING this failure mode is the value.
+
+    The brief calls out "agents optimizing against metrics" as the
+    dominant failure mode of an agent-native substrate. This is the
+    watchdog — the answer to "who watches the watchers?" within the
+    same substrate the watchers run on.
+    """
+    if not WAREHOUSE_DB.exists():
+        raise FileNotFoundError(f"{WAREHOUSE_DB} missing — run `make resolve` first.")
+
+    con = _connect()
+    try:
+        rows = con.execute(
+            """
+            SELECT metric_name,
+                   COUNT(DISTINCT definition_hash) AS n_hashes,
+                   COUNT(*) AS n_versions,
+                   MIN(deployed_at) AS first_seen,
+                   MAX(deployed_at) AS last_seen
+            FROM metric_versions
+            GROUP BY metric_name
+            ORDER BY n_hashes DESC, metric_name
+            """
+        ).fetchall()
+    finally:
+        con.close()
+
+    per_metric: list[dict] = []
+    worst_score = 0.0
+    worst_metric: Optional[str] = None
+    for metric, n_hashes, n_versions, first_seen, last_seen in rows:
+        drift_signal = max(0, int(n_hashes) - 1)
+        score = min(1.0, drift_signal * 0.5)
+        per_metric.append(dict(
+            metric_name=metric,
+            n_hashes=int(n_hashes),
+            n_versions=int(n_versions),
+            drift_signal=drift_signal,
+            gameability_score=score,
+        ))
+        if score > worst_score:
+            worst_score = score
+            worst_metric = metric
+
+    flagged = [m for m in per_metric if m["gameability_score"] > 0]
+    total_metrics = len(per_metric)
+
+    interp = (
+        f"Global metric_gameability_index = {worst_score:.2f} "
+        f"({len(flagged)}/{total_metrics} metrics have shifted definition_hash since first deployment). "
+        f"{'Worst offender: ' + worst_metric if worst_metric and worst_score > 0 else 'All metrics stable at single hash today.'}"
+    )
+
+    trace = [
+        f"metric_gameability_index = {worst_score:.2f} = max gameability across {total_metrics} tracked metrics "
+        f"(0 = stable at one definition; 0.5 = one redefinition; 1.0 = three+ redefinitions).",
+        f"Per-metric breakdown sourced from `metric_versions` ledger. "
+        + (f"{len(flagged)} metric(s) flagged: " + ", ".join(m["metric_name"] for m in flagged)
+           if flagged else "Today all metrics have exactly one active hash → gameability floor."),
+        "Confidence = 1.00 because the ledger query is deterministic. What this index DOESN'T yet catch: a "
+        "metric whose definition stayed constant but whose underlying table got silently re-shaped by a "
+        "deploy. That's the next layer of the watchdog — correlate `metric_versions.deployed_at` against "
+        "table-deploy timestamps once they're tracked.",
+    ]
+
+    return MetricResult(
+        metric_name="metric_gameability_index",
+        value=worst_score,
+        confidence=1.0,
+        sample_n=total_metrics,
+        provenance=[
+            f"metrics_tracked:{total_metrics}",
+            f"metrics_with_drift:{len(flagged)}",
+            f"worst_offender:{worst_metric or 'none'}",
+            "method:max_over_per_metric_drift_signal",
+        ],
+        window_open=False,
+        interpretation=interp,
+        trace=trace,
+        definition_version=DEFS["metric_gameability_index"],
+        computation_sql="SELECT metric_name, COUNT(DISTINCT definition_hash) FROM metric_versions GROUP BY metric_name",
+        as_of=_now(),
+        breakdowns=dict(
+            per_metric=per_metric,
+            total_metrics=total_metrics,
+            flagged_count=len(flagged),
+            worst_offender=worst_metric,
+        ),
     )

@@ -195,6 +195,16 @@ def main() -> None:
     finally:
         con.close()
 
+    # 6. Layer K — pair every proposal with its strongest counter-argument
+    #    BEFORE a human ever sees it. The critic_agent attaches a `critique`
+    #    section to the YAML and logs a critique_proposal action.
+    try:
+        from agent.critic_agent import critique as _critique
+        crit = _critique(proposal_id, write_back=True)
+        print(f"critic_agent: severity={crit['severity']}; counter logged to YAML + agent_actions", file=sys.stderr)
+    except Exception as e:
+        print(f"WARN: critic_agent failed ({e}); proposal stands without critique", file=sys.stderr)
+
 
 if __name__ == "__main__":
     main()

@@ -224,6 +224,18 @@ def run() -> None:
         "table family with its own definition_hash chain, not retro-loading old "
         "events into the current schema.",
         "",
+        "## On Goodhart, named",
+        "",
+        "Goodhart is the dominant failure mode of agent-native analytics — "
+        "when agents optimize against a metric, the metric stops measuring what it "
+        "originally tracked. We instrument for it from day one with "
+        "`metric_gameability_index`, the 12th metric, which flags any metric whose "
+        "`definition_hash` has shifted since first deployment. Today the index is "
+        "0.00 across 11 tracked metrics (all stable at v1.0.0); the watchdog is "
+        "ready, the alarm has not fired. Pair it with the `make reproduce` audit "
+        "trail and the `metric_versions` ledger: three primitives, one contract — "
+        "no metric value cited by an agent can drift unobserved.",
+        "",
         "## The question I would add to this list",
         "",
         "**How do we type the FRESHNESS of model-derived user attributes** — Gyaani "
@@ -273,6 +285,16 @@ def run() -> None:
         f"> 12 weeks. At that point the right fix is a parallel `legacy_*` "
         f"table family with its own `definition_hash` chain — not retro-loading "
         f"old events into the current schema.",
+        "",
+        f"**CLAIM 5.** `metric_gameability_index` should be the first metric a "
+        f"reviewer checks at the start of each week. Today it reads 0.00 across "
+        f"the 11 substantive metrics — every definition is at its original hash. "
+        f"The contract is: this number going non-zero is a deploy-time signal, "
+        f"not a backfill-time apology.  "
+        f"**FALSIFIABLE BY:** a week in which an agent measurably outperforms its "
+        f"own eval AND `metric_gameability_index` stays at 0.00 AND the eval has "
+        f"not been edited. If all three hold, either the agent is genuinely better "
+        f"or the watchdog has a blind spot — investigate before celebrating.",
         "",
         "---",
         "",

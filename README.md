@@ -1,12 +1,22 @@
 # IndiaStox — agent-native analytics substrate
 
+![prediction calibration on W01 synthetic data](assets/calibration_curve.png)
+
+*Prediction calibration on the W01 synthetic data. The realized accuracy
+sits flat near 0.45 across every confidence bucket — well below the perfect-
+calibration diagonal — because the synthetic outcomes are drawn from a
+fixed distribution and are not actually correlated with the agent's
+confidence_stars. The infrastructure to MEASURE calibration is the
+deliverable; the shape of any single week's curve is a different
+question. `make calibration` regenerates this against the live warehouse.*
+
 A working miniature of the production analytics platform described in
 [`IndiaStox_Agent_Native_Analytics_Brief.md`](IndiaStox_Agent_Native_Analytics_Brief.md):
 one week of synthetic Indiastox traffic across five mock sources, end-to-end
 identity resolution with typed confidence, a metric semantic layer defined
-exactly once, a closed-loop experiment proposer, an at-risk-user CS agent,
-and a 10-question agent eval that breaks the build if the agent scores too
-high on its own work.
+exactly once, a closed-loop experiment proposer paired with an adversarial
+critic, an at-risk-user CS agent, and a 10-question agent eval that breaks
+the build if the agent scores too high on its own work.
 
 ## Stack
 
@@ -41,10 +51,32 @@ make metric M=ghost_rate
 ```
 
 Each prints a typed `MetricResult` carrying `value`, `confidence`,
-`sample_n`, `provenance`, `window_open`, `interpretation`,
+`sample_n`, `provenance`, `window_open`, `interpretation`, `trace`,
 `metric_version`, and `definition_hash`. The agent reads the same struct;
 the audit trail records the same struct; the eval grades the same struct.
 **Bare floats from tools are rejected at runtime by `@tool_result`.**
+
+## "Why this number?" — every metric is a calibrated explanation
+
+```bash
+make trace M=ghost_rate
+```
+
+```
+ghost_rate = 0.2867  (v1.0.0 | confidence 0.73 | n=1660)
+
+  [1] ghost_rate = 0.2867 because 476 of 1660 users in the all cohort
+      made zero predictions through the W01 + 7-day window.
+  [2] biggest contributor: unstop (391/476 ghosts; per-source rate
+      28.6% over 1368 users).
+  [3] confidence = 0.73 because the identity layer carries 1632
+      deterministic / 344 probabilistic / 24 low-confidence matches
+      (probabilistic share is down-weighted 0.5x in the propagation chain).
+```
+
+This is the brief's "agents must reason about confidence, not hallucinate
+certainty" made operational. Every metric returns a 3-step natural-language
+trace alongside the number.
 
 ## What's in the box
 
@@ -60,7 +92,10 @@ the audit trail records the same struct; the eval grades the same struct.
 | Eval harness | [eval/canonical_questions.yaml](eval/canonical_questions.yaml), [eval/run_eval.py](eval/run_eval.py) | 10 questions, SQL ground truth, scored 0–30. Auto-triggers an improvement-proposal pass after every run. |
 | Reproducibility | [bonus/reproduce.py](bonus/reproduce.py) | `make reproduce PROPOSAL_ID=...` replays every tool call from a proposal's session and verifies result hashes. |
 | Proposal pipeline | [bonus/experiment_loop.py](bonus/experiment_loop.py), [bonus/approve.py](bonus/approve.py) | Closed loop: dashboard finding → YAML + DuckDB → human approve → audit row. |
-| Position paper | [POSITION_PAPER.md](POSITION_PAPER.md) | Agent-written, evidence-based, with FALSIFIABLE BY clauses. |
+| Position paper | [POSITION_PAPER.md](POSITION_PAPER.md) | Agent-written, evidence-based, with 5 FALSIFIABLE BY claims. |
+| Critic Agent (adversarial review) | [agent/critic_agent.py](agent/critic_agent.py) | Every proposal lands paired with its strongest counter-argument before a human sees it. `make critique PROPOSAL_ID=...` |
+| Anti-Goodhart watchdog | [`metric_gameability_index`](metrics/definitions.py) | 12th metric. Flags any metric whose `definition_hash` shifts since first deployment. `make gameability` |
+| Calibration curve (hero) | [assets/calibration_curve.png](assets/calibration_curve.png) | Predicted P(WIN) vs realized accuracy by confidence bucket. `make calibration` regenerates against the live warehouse. |
 | Failure-mode harness | [verify_failure_modes.py](verify_failure_modes.py) | 10 checks, including FM6 (build fails if eval ≥ 28/30) and FM9 (reproduce catches simulated drift). |
 | Dashboard | [dashboard/](dashboard/) | Metabase API seed script + four panels rendered as markdown tables in DEMO.md. |
 
