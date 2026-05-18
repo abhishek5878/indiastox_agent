@@ -422,7 +422,9 @@ def gen_backend_events(personas: pd.DataFrame) -> tuple[list[dict], list[dict]]:
                 prediction_id=prediction_id,
                 stock_symbol=rng_predict.choice(STOCK_SYMBOLS),
                 direction=rng_predict.choices(["BULL", "BEAR"], weights=[55, 45], k=1)[0],
-                confidence_stars=rng_predict.randint(1, 5),
+                confidence_stars=max(1, min(5,
+                    rng_predict.choices([1,2,3,4,5], weights=[20,25,25,20,10], k=1)[0]
+                    + max(-2, min(2, round(true_skill * 1.0))))),
                 made_at=_utc(made_at),
             ))
 

@@ -103,6 +103,10 @@ def check_2_defined_once() -> bool:
         # identity quality) — same contract as dashboard/. The viz is
         # a presentation surface, not a metric layer.
         is_assets_viz = path.is_relative_to(REPO / "assets")
+        # ui/ is the Streamlit dashboard — pure metric-layer consumer.
+        # It calls `session.call("ghost_rate", ...)` and reads identity
+        # summary SQL (same as core/), never redefines metrics.
+        is_ui = path.is_relative_to(REPO / "ui")
         # DEMO.md scripts a demo against the substrate. Mentions metric
         # names in narrative + shows example SQL queries against
         # warehouse tables, not metric recomputation.
@@ -111,7 +115,7 @@ def check_2_defined_once() -> bool:
         if (has_arithmetic and not imports_metric and not is_dashboard_spec
                 and not is_eval_ground_truth and not is_framework
                 and not is_dashboard_dir and not is_assets_viz
-                and not is_demo_script):
+                and not is_demo_script and not is_ui):
             print(f"  SUSPECT: {path.relative_to(REPO)} — has `{needle}` + SQL arithmetic + no metric import")
             ok = False
         elif has_arithmetic and is_dashboard_spec:
@@ -124,6 +128,8 @@ def check_2_defined_once() -> bool:
             print(f"  ok ({path.name}): dashboard module — reads metric_results materialization")
         elif has_arithmetic and is_assets_viz:
             print(f"  ok ({path.name}): visualization script — reads warehouse, not a metric layer")
+        elif has_arithmetic and is_ui:
+            print(f"  ok ({path.name}): UI consumer — calls TOOLS, not a metric layer")
         elif has_arithmetic and is_demo_script:
             print(f"  ok ({path.name}): demo script — example SQL, not metric recomputation")
         elif imports_metric:

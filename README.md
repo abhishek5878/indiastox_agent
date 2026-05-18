@@ -3,12 +3,13 @@
 ![prediction calibration on W01 synthetic data](assets/calibration_curve.png)
 
 *Prediction calibration on the W01 synthetic data. The realized accuracy
-sits flat near 0.45 across every confidence bucket — well below the perfect-
-calibration diagonal — because the synthetic outcomes are drawn from a
-fixed distribution and are not actually correlated with the agent's
-confidence_stars. The infrastructure to MEASURE calibration is the
-deliverable; the shape of any single week's curve is a different
-question. `make calibration` regenerates this against the live warehouse.*
+**bends upward** with confidence_stars (1★≈36% → 5★≈57%) — but stays well
+below the perfect-calibration diagonal. The pipeline now carries a real
+signal (Pass A / N1): every persona has a latent `true_skill ~ N(0, 1)`
+that biases both their WIN probability AND their confidence_stars. The
+stars→probability mapping is overconfident — the right calibration story
+for a young product. `make calibration` regenerates against the live
+warehouse.*
 
 A working miniature of the production analytics platform described in
 [`IndiaStox_Agent_Native_Analytics_Brief.md`](IndiaStox_Agent_Native_Analytics_Brief.md):
@@ -100,6 +101,16 @@ trace alongside the number.
 | Dashboard | [dashboard/](dashboard/) | Metabase API seed script + four panels rendered as markdown tables in DEMO.md. |
 
 ## Demo
+
+```bash
+make ui         # Streamlit dashboard with 8 tabs — overview, metric
+                # explorer, identity, eval scorecard, proposals + critiques
+                # inbox, CS interventions, live LLM agent chat, audit trail.
+make llm-demo   # Real Anthropic SDK call — claude-sonnet-4-6 answers
+                # Q01 / Q09 / Q10 against the substrate's typed tools.
+                # Requires ANTHROPIC_API_KEY in env or .env.
+make audit      # 20-second summary of the agent_actions audit log.
+```
 
 [DEMO.md](DEMO.md) is the 5-minute Loom script. It opens on the synthetic
 data, walks the three-pass identity resolver, runs the agent against the

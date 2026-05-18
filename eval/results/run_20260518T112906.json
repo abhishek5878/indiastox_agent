@@ -1,9 +1,9 @@
 {
-  "ts": "2026-05-16T16:23:41.727391+00:00",
-  "session_id": "sess-e67ab4600980",
+  "ts": "2026-05-18T11:29:06.438725+00:00",
+  "session_id": "sess-79e5c7b54509",
   "week_of": "2024-W01",
-  "total_score": 27,
-  "max_total": 30,
+  "total_score": 30,
+  "max_total": 33,
   "results": [
     {
       "id": "Q01",
@@ -42,14 +42,14 @@
       "text": "What fraction of Unstop users reached 5+ predictions in week 1?",
       "ground_truth": 0.12353801169590643,
       "ground_truth_kind": "numeric",
-      "agent_value": 0.13450292397660818,
-      "agent_calibration": "confidence=0.90, sample_n=1368, window_open=False, provenance=[cohort_filter:unstop, threshold:>=5, cohort_size:1368, users_at_threshold:184]. 184/1368 (13.5%) of unstop users made \u2265 5 predictions in W01.",
-      "agent_action": "13.5% of Unstop users hit 5+ predictions. Build a retention loop (push notification + leaderboard) targeting the 2-4 prediction tier \u2014 highest engagement-lift opportunity.",
+      "agent_value": 0.12353801169590643,
+      "agent_calibration": "confidence=0.90, sample_n=1368, window_open=False, provenance=[cohort_filter:unstop, threshold:>=5, cohort_size:1368, users_at_threshold:169]. 169/1368 (12.4%) of unstop users made \u2265 5 predictions in W01.",
+      "agent_action": "12.4% of Unstop users hit 5+ predictions. Build a retention loop (push notification + leaderboard) targeting the 2-4 prediction tier \u2014 highest engagement-lift opportunity.",
       "scores": {
-        "accuracy": 0,
+        "accuracy": 1,
         "calibration": 1,
         "action": 1,
-        "total": 2,
+        "total": 3,
         "max": 3
       }
     },
@@ -58,14 +58,14 @@
       "text": "What is the week-1 Gyaani graduation rate across all channels?",
       "ground_truth": 0.26506024096385544,
       "ground_truth_kind": "numeric",
-      "agent_value": 0.2740963855421687,
-      "agent_calibration": "confidence=0.85, sample_n=1660, window_open=False, provenance=[cohort_filter:all, cohort_size:1660, graduates:455, definition:identity_confidence>=0.85 AND predictions>=3]. Gyaani graduation rate = 27.4% (455/1660 all users meet identity_confidence >= 0.85 AND made >= 3 predictions in W01).",
-      "agent_action": "Graduation rate 27.4%. Worth running a channel-split: graduation rate by acquisition_source to see if dark/Unstop differ on this leading retention indicator.",
+      "agent_value": 0.26506024096385544,
+      "agent_calibration": "confidence=0.85, sample_n=1660, window_open=False, provenance=[cohort_filter:all, cohort_size:1660, graduates:440, definition:identity_confidence>=0.85 AND predictions>=3]. Gyaani graduation rate = 26.5% (440/1660 all users meet identity_confidence >= 0.85 AND made >= 3 predictions in W01).",
+      "agent_action": "Graduation rate 26.5%. Worth running a channel-split: graduation rate by acquisition_source to see if dark/Unstop differ on this leading retention indicator.",
       "scores": {
-        "accuracy": 0,
+        "accuracy": 1,
         "calibration": 1,
         "action": 1,
-        "total": 2,
+        "total": 3,
         "max": 3
       }
     },
@@ -104,10 +104,10 @@
     {
       "id": "Q07",
       "text": "What is the mean Brier score for predictions made in week 1 that have closed outcomes?",
-      "ground_truth": 0.3059102972399151,
+      "ground_truth": 0.30527335456475585,
       "ground_truth_kind": "numeric",
-      "agent_value": 0.3051644398766701,
-      "agent_calibration": "confidence=0.85, sample_n=3892, window_open=False, provenance=[closed_predictions:3892, probability_mapping:stars_1..5 -> p_0.5..0.9, actual_mapping:WIN=1, LOSS=0, DRAW=0.5]. Mean Brier = 0.3052 over 3892 closed predictions. Lower is better; 0.25 is the random-guess baseline.",
+      "agent_value": 0.30527335456475585,
+      "agent_calibration": "confidence=0.85, sample_n=3768, window_open=False, provenance=[closed_predictions:3768, probability_mapping:stars_1..5 -> p_0.5..0.9, actual_mapping:WIN=1, LOSS=0, DRAW=0.5]. Mean Brier = 0.3053 over 3768 closed predictions. Lower is better; 0.25 is the random-guess baseline.",
       "agent_action": "Brier = 0.305. Random-guess baseline is 0.25. The current confidence-star \u2192 probability mapping (1=0.5..5=0.9) appears miscalibrated; propose mapping recalibration after 4 weeks of data.",
       "scores": {
         "accuracy": 1,
@@ -120,10 +120,10 @@
     {
       "id": "Q08",
       "text": "Which user segment has the steepest skill curve after week 1?",
-      "ground_truth": -17.208438517790682,
+      "ground_truth": -14.026420573037285,
       "ground_truth_kind": "skill_winner:whatsapp_dark",
       "agent_value": null,
-      "agent_calibration": "unstop mean mu = 1474 (n=877), whatsapp_dark mean mu = 1483 (n=162). Difference < 25 mu = within Glicko-2 noise floor for 1 rating period. No segment difference detected.",
+      "agent_calibration": "unstop mean mu = 1473 (n=877), whatsapp_dark mean mu = 1486 (n=162). Difference < 25 mu = within Glicko-2 noise floor for 1 rating period. No segment difference detected.",
       "agent_action": "No significant segment difference at this sample size. Re-evaluate at 4 weeks or with sigma-update step enabled. Don't trust any segment-skill claim with only 1 rating period of data.",
       "scores": {
         "accuracy": 1,
@@ -155,13 +155,29 @@
       "ground_truth": null,
       "ground_truth_kind": "unknowable",
       "agent_value": null,
-      "agent_calibration": "Insufficient data: 1 week observed; week-4 retention requires 4+ weeks of post-launch data. Wide CI [-10pp, +25pp] reflects lower bound = saturation (double spend hits ad-fatigue at unchanged audience) vs upper bound = linear scaling (perfect untapped audience). Current week's WAP=1344, unstop ghost rate=28.6% \u2014 neither is a leading indicator for the counterfactual ask. Confidence in any point estimate < 0.20.",
+      "agent_calibration": "Insufficient data: 1 week observed; week-4 retention requires 4+ weeks of post-launch data. Wide CI [-10pp, +25pp] reflects lower bound = saturation (double spend hits ad-fatigue at unchanged audience) vs upper bound = linear scaling (perfect untapped audience). Current week's WAP=1332, unstop ghost rate=28.6% \u2014 neither is a leading indicator for the counterfactual ask. Confidence in any point estimate < 0.20.",
       "agent_action": "Don't act on a counterfactual lift estimate from 1 week of data. Run a small incrementality test on 10% of Unstop budget for 4 weeks; that leading indicator is what unlocks the doubling decision. Estimated wait: 4 weeks; cost: 10% extra spend.",
       "scores": {
         "accuracy": 1,
         "calibration": 1,
         "action": 1,
         "total": 3,
+        "max": 3
+      }
+    },
+    {
+      "id": "Q11",
+      "text": "If we replaced Glicko-2 with TrueSkill for the skill estimator, what would happen to weekly_active_posters in W04?",
+      "ground_truth": null,
+      "ground_truth_kind": "unknowable",
+      "agent_value": null,
+      "agent_calibration": "No tool in the substrate maps to a different estimator. Current Glicko-2 mean mu = 1475 over 1039 users; insufficient data to project an alternate-estimator effect on W04 weekly_active_posters from one week of matches. confidence in any point estimate < 0.10.",
+      "agent_action": "Refuse to estimate. The substrate's current tools answer questions about the current estimator's outputs, not the counterfactual outputs of a different estimator.",
+      "scores": {
+        "accuracy": 1,
+        "calibration": 0,
+        "action": 0,
+        "total": 1,
         "max": 3
       }
     }

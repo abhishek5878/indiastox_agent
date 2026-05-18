@@ -45,6 +45,9 @@ audit:
 llm-demo:
 	python3 -m agent.llm_growth_agent $(ARGS)
 
+ui:
+	python3 -m streamlit run ui/app.py
+
 cs-run:
 	python3 agent/cs_agent.py
 

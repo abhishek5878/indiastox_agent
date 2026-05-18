@@ -115,10 +115,13 @@ def main() -> None:
 
     caption = (
         f"Mean Brier = {brier:.4f}  (random-guess baseline = 0.25)\n"
-        f"Synthetic data uses a fixed WIN/LOSS/DRAW outcome distribution that is\n"
-        f"NOT correlated with confidence_stars — divergence below the diagonal is\n"
-        f"expected and honest. The infrastructure to MEASURE calibration is the\n"
-        f"deliverable; the shape of any single week's curve is a different question."
+        f"Synthetic data carries a real signal (N1): WIN probability AND\n"
+        f"confidence_stars are both biased by each persona's latent true_skill.\n"
+        f"The realized line BENDS upward with stars (1★→5★ ≈ 36%→57%) but stays\n"
+        f"below the diagonal — the stars→probability mapping is overconfident,\n"
+        f"which is the right calibration story for a young product. The\n"
+        f"infrastructure to MEASURE calibration is the deliverable; the curve\n"
+        f"shape from one week is a starting point, not a verdict."
     )
     fig.text(0.02, -0.02, caption, fontsize=8.2, color="#5f6368", ha="left",
              va="top", family="monospace")

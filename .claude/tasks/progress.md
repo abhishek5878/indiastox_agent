@@ -183,6 +183,86 @@ Layers A–E shipped. All 7 failure-mode checks pass; 12/12 metric tests pass; 2
 ### Status
 Layers F–I shipped. 10/10 failure modes pass. 12/12 metric tests pass. The eval-loop closes on itself (improvement agent fires after every `make eval`); CS Agent demonstrates the substrate works for a non-Growth archetype with zero re-architecture; metric versioning + reproduce gives the audit-six-months-later answer the brief asked for; the position paper is evidence-based and falsifiable.
 
+## 2026-05-18 — Improvements N1–N9 (Pass A → Pass E)
+
+### Pass A — N1 real signal in synthetic data
+- Added `true_skill ~ N(0, 1)` per persona; biases WIN probability AND
+  confidence_stars. Win-rate ladder 36% → 57% across stars; Pearson
+  corr(true_skill, Glicko-2 mu) = 0.346. Brier 0.305 → 0.277.
+- Tests: `metrics/test_signal.py` (3 assertions on ladder, correlation, dim_user shape).
+
+### Pass B — bugs that the eval flagged
+- **N2:** Q03/Q04 TZ-parameter drift in `_week_bounds()` fixed. Naive
+  UTC datetimes instead of TZ-aware to match the naive TIMESTAMP
+  column convention. Eval rose 27/30 → 29/30. Added Q11 (TrueSkill
+  counterfactual, `unknowable_chain_of_inferences`) and recalibrated
+  FM6 threshold to <31/33.
+- **N7:** Faithful Glicko-2 with Step-5 Illinois volatility update.
+  Verified against Glickman 2012 worked example (3 tests in
+  `test_skill_glicko_paper.py`). Market RD lifted 50 → 150 to keep
+  user phi in production-range. CS-Agent threshold reverted to literal
+  `phi > 300` with synthetic-data 75th-percentile fallback for
+  high-prediction-count cohorts.
+- **N3:** `core/data_quality.py` scans for Klaviyo clock-skew (27/672
+  pairs caught), future-dated events, orphan clicks. Hooked into
+  `identity/resolve.py`. New FM11 fails the build if no clock_skew
+  audit_log row exists. `make data-quality` target.
+
+### Pass C — substance upgrades
+- **N5:** Critic Agent v2.0.0 — confounders are now `(name, check_fn)`
+  pairs that fact-check against the live substrate. On the current
+  ghost-rate-spike proposal, 3 of 5 confounders fire with concrete
+  numbers (klaviyo 4.0% skew, brier 0.3053, dark 17.6%). Severity
+  weighting data-driven.
+- **N8:** `metric_gameability_index` v2.0.0 — 3-axis watchdog:
+  definition_hash_drift, source_table_drift (new
+  `source_table_versions` table + `core/source_table_registry.py`),
+  value_outlier_drift over consecutive metric_results runs.
+  Global = max across axes. Clean baseline reads 0.00.
+
+### Pass D — proving the substrate
+- **N6:** 41 new tests across `metrics/test_trace.py` (27),
+  `agent/test_critic_agent.py` (6), `metrics/test_gameability.py` (8).
+  Total test count 18 → 59.
+- **N9:** `agent/audit_summary.py` + `make audit`. Tool-call frequency
+  ASCII-bars, mean confidence per tool, proposal status histogram,
+  critique severity distribution, top sessions, downstream-proposal
+  events. JSON output mode for UI consumption.
+- **N4:** Real LLM Growth Agent — `agent/llm_growth_agent.py` with
+  Anthropic SDK + `claude-sonnet-4-6` + cached system prompt. All 12
+  metric tools auto-exposed via introspection. Tool calls flow
+  through the same `ToolSession` audit-logging path. Verified on Q01
+  (1 tool call, 200-word answer with action), Q09 (multi-tool), and
+  Q10 (refuses to fabricate; surfaces 3 measurable metrics + 4-step
+  incrementality test with sample-size math). `make llm-demo`.
+
+### Pass D.5 — Streamlit UI (8 tabs)
+- `ui/app.py`: overview / metric explorer / identity explorer /
+  interactive eval-scorecard heatmap (Plotly) / proposals + critiques
+  inbox with live approve+reject buttons / CS interventions feed /
+  LLM agent chat with tool-trace expanders / audit trail viewer.
+  `make ui` (smoke-tested headless on :8765, homepage OK, clean log).
+- requirements.txt: anthropic + matplotlib + streamlit + plotly.
+
+### Pass E — polish
+- Calibration curve regenerated against the new signal-bearing data;
+  curve bends 36% → 57% across stars; Brier 0.277. Caption rewritten.
+- Dashboard mosaic + eval scorecard regenerated.
+- README updated with the bent-calibration story + `make ui` /
+  `make llm-demo` / `make audit` in the Demo section.
+- FM2 exemption extended to `ui/` (presentation-side metric consumer).
+- Final state: **11/11 failure modes pass, 59 tests pass, eval 30/33,
+  3 commit groups pushed**.
+
+### Status (close of 2026-05-18 session)
+N1–N9 + UI shipped. 11/11 failure modes pass. 59 tests pass. Eval at
+30/33 (below FM6 31/33 threshold). LLM Growth Agent calls Claude
+end-to-end with audit-logged tool use. Streamlit UI runs cleanly.
+Calibration curve carries a real-signal story. Position paper still
+pending cross-model verification (your call). Three commit groups
+pushed (e24dab6, 3c3a8c1, 2c25804) — Pass D.5+E final commit lands
+next.
+
 ## 2026-05-16 — Reviewer-feedback polish (pre-submission)
 
 ### Actions taken
