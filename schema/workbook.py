@@ -114,6 +114,7 @@ class DimUser(WorkbookBase):
     model_version: str
     acquisition_source: Optional[str] = None  # earliest known acquisition source
     signup_time: Optional[datetime] = None
+    true_skill: Optional[float] = None  # latent ground-truth (Layer N1); for Glicko-2 mu validation
 
 
 class DimChallenge(WorkbookBase):

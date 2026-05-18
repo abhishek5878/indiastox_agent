@@ -138,6 +138,7 @@ def build_personas() -> pd.DataFrame:
     rng_devices = random.Random(SEED + 2)
     rng_emails = random.Random(SEED + 3)
     rng_patterns = random.Random(SEED + 4)
+    rng_skill = random.Random(SEED + 5)  # latent true_skill per persona (Layer N1)
 
     print(f"Loading {N_PERSONAS} personas from nvidia/Nemotron-Personas-India en_IN ...", file=sys.stderr)
     raw = _load_nemotron_sample(N_PERSONAS, SEED + 1)
@@ -210,6 +211,12 @@ def build_personas() -> pd.DataFrame:
         device_type = _device_type(occupation, rng_devices)
         phone_hash = hashlib.sha256(f"phone:{persona_id}:{SEED}".encode()).hexdigest()
 
+        # Layer N1 — latent true_skill ~ N(0, 1), deterministic by SEED+5.
+        # Biases the persona's prediction-WIN probability against the market.
+        # Held in dim_user post-resolution so we can later cross-validate that
+        # Glicko-2 mu correlates with the true_skill ground truth.
+        true_skill = rng_skill.gauss(0.0, 1.0)
+
         rows.append(
             dict(
                 persona_id=persona_id,
@@ -232,6 +239,7 @@ def build_personas() -> pd.DataFrame:
                 acquisition_channel=channel,  # "unstop" | "whatsapp_dark"
                 identity_pattern=pattern,
                 pair_partner_idx=pair_partner,
+                true_skill=true_skill,
                 model_version="generator-v1.0.0",
             )
         )
@@ -347,6 +355,7 @@ def gen_backend_events(personas: pd.DataFrame) -> tuple[list[dict], list[dict]]:
 
     for _, p in personas.iterrows():
         canonical_user_id = str(uuid.UUID(int=int(hashlib.sha256(p["persona_id"].encode()).hexdigest()[:32], 16)))
+        true_skill = float(p.get("true_skill", 0.0) or 0.0)
 
         # user_signup. Mon-Wed within the week.
         signup_time = WEEK_START_IST + timedelta(
@@ -366,6 +375,7 @@ def gen_backend_events(personas: pd.DataFrame) -> tuple[list[dict], list[dict]]:
             referral_code=None,
             platform=platform,
             acquisition_channel=p["acquisition_channel"],  # "unstop" | "whatsapp_dark"
+            true_skill=true_skill,  # carried for ground-truth validation in dim_user
         ))
 
         # challenge_signup — 92% of Unstop users sign up for the challenge in
@@ -419,7 +429,16 @@ def gen_backend_events(personas: pd.DataFrame) -> tuple[list[dict], list[dict]]:
             # Deferred outcome: resolved_at = made_at + 5 days (the brief's
             # deferred-join pattern). Goes to a separate file.
             resolved_at = made_at + timedelta(days=5)
-            outcome = rng_outcome.choices(["WIN", "LOSS", "DRAW"], weights=[42, 50, 8], k=1)[0]
+            # Layer N1 — outcome biased by persona.true_skill. The market
+            # is the opponent at skill=0; high-skill personas reliably beat
+            # the market over many predictions. p_win ∈ [0.22, 0.62];
+            # DRAW stays at 8%; LOSS = 1 - p_win - p_draw.
+            p_win = max(0.22, min(0.62, 0.42 + true_skill * 0.10))
+            p_draw = 0.08
+            p_loss = 1.0 - p_win - p_draw
+            outcome = rng_outcome.choices(
+                ["WIN", "LOSS", "DRAW"], weights=[p_win, p_loss, p_draw], k=1,
+            )[0]
             pnl = {"WIN": rng_outcome.uniform(0.5, 5.0), "LOSS": -rng_outcome.uniform(0.5, 4.0), "DRAW": 0.0}[outcome]
             outcomes.append(dict(
                 event_type="prediction_outcome",

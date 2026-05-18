@@ -465,6 +465,9 @@ def build_dim_user(unstop, signups, edges) -> list[dict]:
             model_version=MODEL_VERSION,
             acquisition_source=channel,
             signup_time=_parse_dt(s["signup_time"]),
+            # Layer N1 — carry the ground-truth latent skill into dim_user
+            # for downstream Glicko-2 validation (mu ↔ true_skill correlation).
+            true_skill=float(s.get("true_skill", 0.0) or 0.0),
         ))
     return rows
 
@@ -499,14 +502,14 @@ def load_warehouse(
            (user_id, full_name, personal_email, college_email, phone_hash,
             device_fingerprint, city, city_tier, device_type, occupation, age,
             college, identity_confidence, identity_flags, model_version,
-            acquisition_source, signup_time, _source_system)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            acquisition_source, signup_time, true_skill, _source_system)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         [
             (
                 r["user_id"], r["full_name"], r["personal_email"], r["college_email"], r["phone_hash"],
                 r["device_fingerprint"], r["city"], r["city_tier"], r["device_type"], r["occupation"], r["age"],
                 r["college"], r["identity_confidence"], r["identity_flags"], r["model_version"],
-                r["acquisition_source"], r["signup_time"], "resolve.py",
+                r["acquisition_source"], r["signup_time"], r.get("true_skill"), "resolve.py",
             ) for r in dim_user_rows
         ],
     )
