@@ -11,6 +11,13 @@ interface ToolCallTrace {
   is_error: boolean;
 }
 
+const PRESETS = [
+  "What is the week-1 ghost rate for the Unstop cohort?",
+  "Which channel has the worst CAC bound right now?",
+  "Why did the Critic flag the latest growth proposal?",
+  "How confident should we be in the brier_score for W01?",
+];
+
 export default function ChatPage() {
   const [hasKey, setHasKey] = useState<boolean | null>(null);
   const [model, setModel] = useState<string>("claude-sonnet-4-6");
@@ -99,6 +106,18 @@ export default function ChatPage() {
             <Button onClick={ask} disabled={busy || !hasKey}>
               {busy ? <Spinner /> : "Ask"}
             </Button>
+          </div>
+          <div className="flex flex-wrap gap-1.5 mt-3">
+            {PRESETS.map((p) => (
+              <button
+                key={p}
+                onClick={() => setQuestion(p)}
+                disabled={busy}
+                className="px-2.5 py-1 rounded-full text-[11px] bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--accent)] hover:text-[var(--foreground)] transition-colors disabled:opacity-50"
+              >
+                {p}
+              </button>
+            ))}
           </div>
           {err && <Badge variant="destructive" className="mt-3">{err}</Badge>}
         </CardContent>

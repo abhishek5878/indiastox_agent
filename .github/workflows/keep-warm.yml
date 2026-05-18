@@ -1,0 +1,23 @@
+name: keep-warm
+on:
+  schedule:
+    # Render free tier sleeps after 15 min idle. Ping every 12 min so it never
+    # sleeps. GitHub cron is best-effort (5-15 min jitter) but well under the
+    # window. workflow_dispatch lets you trigger manually too.
+    - cron: "*/12 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: ping /api/health
+        run: |
+          for i in 1 2 3; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 60 https://indiastox-api.onrender.com/api/health)
+            echo "attempt $i -> $code"
+            [ "$code" = "200" ] && exit 0
+            sleep 10
+          done
+          exit 1
