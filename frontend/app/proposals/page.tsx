@@ -100,7 +100,7 @@ function FeaturedCritique({ p, busy, onAct }: {
         <div className="text-[11px] uppercase tracking-widest text-[var(--muted-foreground)] mb-1">Original hypothesis</div>
         <p className="text-sm leading-relaxed">{p.hypothesis}</p>
         <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-[var(--muted-foreground)]">
-          <span>targets <span className="mono text-[var(--foreground)]">{humanizeMetric(p.affected_metric)}</span></span>
+          <span>targets <span className="text-[var(--foreground)]">{humanizeMetric(p.affected_metric)}</span> <span className="mono text-[var(--muted-foreground)]">({p.affected_metric})</span></span>
           <span>·</span>
           <span>expected lift <span className="mono text-[var(--foreground)]">{p.expected_lift_pct.toFixed(1)}pp</span></span>
           <span>·</span>
@@ -173,7 +173,7 @@ function ProposalCard({ p, busy, onAct, open, onToggle }: {
           <div className="flex items-center gap-2 mb-1 flex-wrap">
             <CardTitle className="mono text-sm">{p.proposal_id}</CardTitle>
             <Badge variant={sevVariant as any}>{sev}</Badge>
-            <Badge variant="outline">{humanizeMetric(p.affected_metric)}</Badge>
+            <Badge variant="outline">{humanizeMetric(p.affected_metric)} <span className="mono opacity-60 ml-1">({p.affected_metric})</span></Badge>
             {fired > 0 && (
               <Badge variant="warning" className="text-[10px]">{fired}/{total} confounders fired</Badge>
             )}

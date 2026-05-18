@@ -177,6 +177,17 @@ def compose_intervention(user_row, predictions: list[dict]) -> dict:
         last_str = last_at.isoformat() if hasattr(last_at, "isoformat") else str(last_at)
         grounding_facts.append(f"last_call={last_str}_on_{most_recent_call['stock_symbol']}")
 
+    # Reference the user's actual ticker so every card visibly differs even
+    # when mu/phi cluster in the early-cohort range.
+    fav_ticker = (most_recent_call or {}).get("stock_symbol") if most_recent_call else None
+    sector_of = {
+        "RELIANCE": "energy", "ONGC": "energy",
+        "TCS": "IT", "INFY": "IT", "WIPRO": "IT", "HCLTECH": "IT",
+        "HDFC": "banking", "ICICIBANK": "banking", "SBIN": "banking", "BAJFINANCE": "banking",
+        "ITC": "FMCG",
+    }
+    fav_sector = sector_of.get(fav_ticker or "", "your usual sector")
+
     # Build a concrete reference to the most recent resolved call when we have one.
     last_ref = ""
     if last_resolved is not None:
@@ -186,7 +197,7 @@ def compose_intervention(user_row, predictions: list[dict]) -> dict:
         if out == "WIN":
             last_ref = f"Your {dirn} on {sym} closed correctly — that's signal, but at phi {phi:.0f} it's still one data point. "
         elif out == "LOSS":
-            last_ref = f"Your {dirn} on {sym} closed the other way — that's normal at this sample size, but the next 3 calls will move your rating more than this one did. "
+            last_ref = f"Your {dirn} on {sym} closed the other way — normal at this sample size, but the next 3 calls will move your rating more than this one did. "
         elif out == "DRAW":
             last_ref = f"Your {dirn} on {sym} closed flat — at phi {phi:.0f} we can't tell if that was a coin flip or a read. "
 
@@ -196,33 +207,35 @@ def compose_intervention(user_row, predictions: list[dict]) -> dict:
             head = (
                 f"{last_ref}"
                 f"{n_calls} calls in, {n_correct} landed correctly. "
-                f"Your Gyaani uncertainty is at phi {phi:.0f} — 3 more resolved calls and the rating stabilises."
+                f"Your Gyaani uncertainty sits at phi {phi:.1f}, mu {mu:.0f} — 3 more resolved calls and the rating stabilises."
             )
-            action = "Pick one stock outside your watchlist this week and call BULL or BEAR. Diversity is what tightens phi."
+            action = f"Pick one stock outside {fav_sector} this week and call BULL or BEAR. Diversity is what tightens phi."
         elif correct_tickers and variant_idx == 1:
             head = (
                 f"{last_ref}"
                 f"You've made {n_calls} calls, {correct_tickers[0]} included as a hit. "
-                f"The rating engine wants {max(3, 5 - n_calls)} more resolved calls before it considers your edge stable."
+                f"The rating engine wants {max(3, 5 - n_calls)} more resolved calls before it considers your edge in {fav_sector} stable."
             )
-            action = "Take the next Make-a-Call slot. The streak is fragile until phi drops below 150."
+            action = f"Take the next Make-a-Call slot. The streak is fragile until phi drops below 150 (you're at {phi:.1f})."
         elif variant_idx == 2:
             head = (
                 f"{last_ref}"
                 f"{n_calls} call{'s' if n_calls != 1 else ''} this week, none of the resolved ones landed. "
-                f"At phi {phi:.0f} that's still noise — your priors haven't been challenged yet."
+                f"At phi {phi:.1f} that's still noise — your priors haven't been challenged yet."
             )
             action = (
-                f"Step outside {tickers[0] if tickers else 'your current set'}: pick a stock from a different sector "
+                f"Step outside {fav_ticker or 'your current set'} ({fav_sector}): pick a stock from a different sector "
                 "and make one BULL/BEAR call. The rating won't tighten until the cohort spans 2+ sectors."
             )
         else:
+            tickers_str = ", ".join(sorted(set(tickers))[:2]) if tickers else "a narrow set"
             head = (
                 f"{last_ref}"
-                f"Quiet week — {n_calls} call{'s' if n_calls != 1 else ''} on the board, mu {mu:.0f} with phi {phi:.0f}. "
+                f"Quiet week — {n_calls} call{'s' if n_calls != 1 else ''} on the board ({tickers_str}), "
+                f"mu {mu:.0f} with phi {phi:.1f}. "
                 f"Inactivity is the fastest way to lose Gyaani standing on the W01 leaderboard."
             )
-            action = "One Make-a-Call before Sunday keeps your rating live. The leaderboard cutoff is the weekly close."
+            action = f"One Make-a-Call in {fav_sector} before Sunday keeps your rating live. The leaderboard cutoff is the weekly close."
     else:
         tone = "discovery"
         if tickers and variant_idx == 0:
@@ -230,30 +243,32 @@ def compose_intervention(user_row, predictions: list[dict]) -> dict:
             head = (
                 f"{last_ref}"
                 f"You've explored {len(set(tickers))} tickers — {t_sample}. "
-                f"At {n_calls} call{'s' if n_calls != 1 else ''} we can't yet tell if there's an edge somewhere or just curiosity."
+                f"At {n_calls} call{'s' if n_calls != 1 else ''} (phi {phi:.1f}) we can't yet tell if there's an edge in {fav_sector} or just curiosity."
             )
-            action = "Two more Make-a-Calls in your strongest sector and the leaderboard ranks you. Right now you're invisible."
+            action = f"Two more Make-a-Calls in {fav_sector} and the leaderboard ranks you. Right now you're invisible."
         elif tickers and variant_idx == 1:
             head = (
                 f"{last_ref}"
-                f"{n_calls} call{'s' if n_calls != 1 else ''} placed via WhatsApp share — that puts you in the 17.6% dark cohort "
-                f"the attribution layer can't fully bound. The product can still rank you, but only on resolved calls."
+                f"{n_calls} call{'s' if n_calls != 1 else ''} placed via WhatsApp share, most recent on {fav_ticker or 'the watchlist'} — "
+                f"that puts you in the 17.6% dark cohort the attribution layer can't fully bound. "
+                f"The product can still rank you (mu {mu:.0f}), but only on resolved calls."
             )
             action = "Place one more BULL/BEAR call this week. The Gyaani score updates the moment it resolves at T+5d."
         elif variant_idx == 2:
             head = (
                 f"{last_ref}"
-                f"You signed up via a forwarded link and have made {n_calls} call{'s' if n_calls != 1 else ''}. "
-                f"At phi {phi:.0f}, the rating engine is still learning your prior."
+                f"You signed up via a forwarded link and have made {n_calls} call{'s' if n_calls != 1 else ''} "
+                f"({fav_ticker or 'no recent ticker'} most recently). At phi {phi:.1f}, the rating engine is still learning your prior."
             )
             action = "The Movers tab surfaces stocks that moved >2% today. Pick one, call BULL or BEAR — that's enough."
         else:
             head = (
                 f"{last_ref}"
-                f"You arrived through a WhatsApp forward and made {n_calls} call{'s' if n_calls != 1 else ''}. "
+                f"You arrived through a WhatsApp forward and made {n_calls} call{'s' if n_calls != 1 else ''}, "
+                f"last one on {fav_ticker or 'an unknown ticker'} (phi {phi:.1f}, mu {mu:.0f}). "
                 f"The first 3 resolved calls are what set the Gyaani prior — after that, drift gets harder to undo."
             )
-            action = "Make a Call on any of last week's gainers. One BULL/BEAR call before Sunday."
+            action = f"Make a Call on any of last week's gainers — {fav_sector if fav_sector != 'your usual sector' else 'pick a sector you like'}. One BULL/BEAR call before Sunday."
 
     intervention_text = head + " " + action
     estimated_lift = 0.05 + (0.05 if correct_tickers else 0.0)

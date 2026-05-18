@@ -1,10 +1,11 @@
 user_id: d89afca8-35d6-fdf5-6df2-20d9e66fa677
 risk_score: 6.088825397877464
-intervention_text: "Your BEAR on ICICIBANK closed the other way \u2014 that's normal\
-  \ at this sample size, but the next 3 calls will move your rating more than this\
-  \ one did. Quiet week \u2014 2 calls on the board, mu 1260 with phi 215. Inactivity\
-  \ is the fastest way to lose Gyaani standing on the W01 leaderboard. One Make-a-Call\
-  \ before Sunday keeps your rating live. The leaderboard cutoff is the weekly close."
+intervention_text: "Your BEAR on ICICIBANK closed the other way \u2014 normal at this\
+  \ sample size, but the next 3 calls will move your rating more than this one did.\
+  \ Quiet week \u2014 2 calls on the board (ICICIBANK, TCS), mu 1260 with phi 214.9.\
+  \ Inactivity is the fastest way to lose Gyaani standing on the W01 leaderboard.\
+  \ One Make-a-Call in banking before Sunday keeps your rating live. The leaderboard\
+  \ cutoff is the weekly close."
 tone: analytical
 grounding_facts:
 - calls_made=2

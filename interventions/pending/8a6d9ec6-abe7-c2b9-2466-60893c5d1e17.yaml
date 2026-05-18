@@ -1,10 +1,11 @@
 user_id: 8a6d9ec6-abe7-c2b9-2466-60893c5d1e17
 risk_score: 6.292297620099687
-intervention_text: "Your BULL on SBIN closed the other way \u2014 that's normal at\
-  \ this sample size, but the next 3 calls will move your rating more than this one\
-  \ did. Quiet week \u2014 2 calls on the board, mu 1260 with phi 215. Inactivity\
+intervention_text: "Your BULL on SBIN closed the other way \u2014 normal at this sample\
+  \ size, but the next 3 calls will move your rating more than this one did. Quiet\
+  \ week \u2014 2 calls on the board (SBIN, TCS), mu 1260 with phi 214.9. Inactivity\
   \ is the fastest way to lose Gyaani standing on the W01 leaderboard. One Make-a-Call\
-  \ before Sunday keeps your rating live. The leaderboard cutoff is the weekly close."
+  \ in banking before Sunday keeps your rating live. The leaderboard cutoff is the\
+  \ weekly close."
 tone: analytical
 grounding_facts:
 - calls_made=2

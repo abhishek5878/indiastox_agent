@@ -37,7 +37,6 @@ export default function CSPage() {
                   <div className="flex items-center gap-2">
                     <Badge variant="outline">{iv.tone}</Badge>
                     <Badge variant="info">{iv.channel}</Badge>
-                    {iv.primary_ticker && <Badge variant="default" className="mono">{iv.primary_ticker}</Badge>}
                   </div>
                   <span className="text-xs text-[var(--muted-foreground)] mono">{iv.user_id.slice(0, 8)}</span>
                 </div>
