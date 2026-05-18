@@ -22,7 +22,7 @@ export default function CSPage() {
         <div className="text-xs font-medium tracking-widest text-[var(--muted-foreground)] uppercase">CS interventions</div>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight">The CS agent drafts the nudge. You approve the send.</h1>
         <p className="mt-1 text-sm text-[var(--muted-foreground)] max-w-2xl">
-          Same metric layer, identity graph, audit trail — different agent archetype. Each card grounded in the user's actual tickers and prediction history.
+          Same metric layer, identity graph, audit trail — different agent archetype. Each nudge references the user's actual last BULL/BEAR call and how it resolved, not just their tickers.
         </p>
       </header>
 
@@ -46,7 +46,7 @@ export default function CSPage() {
                 <p className="text-sm mb-3">{iv.intervention_text}</p>
                 <div className="grid grid-cols-3 gap-2 text-xs mb-3">
                   <Stat label="risk" value={iv.risk_score?.toFixed(2)} />
-                  <Stat label="preds" value={`${iv.n_correct ?? 0}/${iv.n_predictions ?? 0}`} />
+                  <Stat label="calls landed" value={`${iv.n_correct ?? 0}/${iv.n_predictions ?? 0}`} />
                   <Stat label="est. lift" value={iv.estimated_reactivation_lift ? `${(iv.estimated_reactivation_lift * 100).toFixed(0)}%` : "—"} />
                 </div>
                 <details>

@@ -47,7 +47,7 @@ export default function OverviewPage() {
 
       <div className="grid grid-cols-2 gap-5 mb-5">
         <Card>
-          <CardHeader><CardTitle>Prediction calibration</CardTitle></CardHeader>
+          <CardHeader><CardTitle>Call calibration</CardTitle></CardHeader>
           <CardContent>
             <img src={llm.asset("calibration_curve.png")} alt="calibration" className="rounded-md w-full" />
           </CardContent>

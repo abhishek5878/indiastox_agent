@@ -168,7 +168,7 @@ export default function LivingWorldPage() {
               />
               <KpiTile label="Dark fraction" value={`${(kpis.dark_fraction.value * 100).toFixed(1)}%`} hint={METRICS.dark_channel_fraction.short} />
               <KpiTile label="New personas" value={kpis.sim_personas_new.toLocaleString()} hint="sim.world joiners" />
-              <KpiTile label="Predictions · 24h" value={kpis.sim_preds_24h.toLocaleString()} hint="rolling synthetic day" />
+              <KpiTile label="Calls · 24h" value={kpis.sim_preds_24h.toLocaleString()} hint="BULL/BEAR calls in the rolling synthetic day" />
             </>
           )
         ) : (
@@ -227,6 +227,15 @@ function TourStep({ n, title, link, children }: { n: number; title: string; link
   return <Link href={link}>{inner}</Link>;
 }
 
+const KIND_LABELS: Record<string, string> = {
+  prediction_made: "Call made",
+  outcome_resolved: "Call resolved",
+  persona_joined: "User joined",
+  tick_complete: "Tick complete",
+  growth_watcher_fired: "Growth watcher fired",
+  cs_watcher_fired: "CS watcher fired",
+};
+
 function EventRow({ evt }: { evt: SimEvent }) {
   const tone =
     evt.kind === "growth_watcher_fired" ? "warning" :
@@ -239,11 +248,12 @@ function EventRow({ evt }: { evt: SimEvent }) {
     .slice(0, 3)
     .map(([k, v]) => `${k}=${typeof v === "object" ? JSON.stringify(v) : v}`)
     .join("  ·  ");
+  const label = KIND_LABELS[evt.kind] || evt.kind;
   return (
     <div className="py-1.5 flex items-center gap-3 slide-in">
       <span className="text-[var(--muted-foreground)] tabular-nums w-[88px] shrink-0">{ts}</span>
       <Badge variant={tone as any} className="min-w-[70px] justify-center text-[10px]">{evt.lens}</Badge>
-      <span className="font-medium min-w-[180px] shrink-0">{evt.kind}</span>
+      <span className="font-medium min-w-[180px] shrink-0">{label}</span>
       <span className="text-[var(--muted-foreground)] truncate flex-1">{summary}</span>
     </div>
   );

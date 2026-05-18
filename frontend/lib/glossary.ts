@@ -15,8 +15,8 @@ export const CONFOUNDERS: Record<string, GlossaryEntry> = {
   },
   prediction_market_noise_floor: {
     label: "Noise-floor proximity",
-    short: "Are predictions only marginally better than random?",
-    long: "Compares brier_score against the random-guess baseline of 0.25. If the substrate is near the floor, any channel intervention is fitting noise.",
+    short: "Are user calls only marginally better than random?",
+    long: "Compares brier_score against the random-guess baseline of 0.25. If the substrate is near the floor, any channel intervention is fitting noise — BULL/BEAR resolutions can't tell the variants apart.",
   },
   identity_resolution_drift: {
     label: "Identity-graph drift",
@@ -38,22 +38,22 @@ export const CONFOUNDERS: Record<string, GlossaryEntry> = {
 export const METRICS: Record<string, GlossaryEntry> = {
   ghost_rate: {
     label: "Ghost rate",
-    short: "Fraction of users who sign up and make zero predictions.",
+    short: "Fraction of users who sign up and never Make a Call.",
     long: "Computed weekly per acquisition_source. The cohort is closed at sign-up; the metric carries a typed confidence score that reflects sample size + completeness of the join.",
   },
   ghost_rate_unstop: {
     label: "Ghost rate · Unstop",
-    short: "Unstop-cohort fraction that signs up and never predicts.",
+    short: "Unstop-cohort fraction that signs up and never makes a BULL/BEAR call.",
   },
   brier_score: {
     label: "Brier score",
-    short: "Probabilistic accuracy. Lower is better. Random = 0.25.",
-    long: "Mean squared error between predicted confidence stars (rescaled to probability) and actual outcomes. The agent's eval also asks for the calibration *string* alongside the number — see /eval.",
+    short: "Call calibration. Lower is better. Random = 0.25.",
+    long: "Mean squared error between a user's confidence-stars (rescaled to probability) and their actual BULL/BEAR outcomes. The agent's eval also asks for the calibration *string* alongside the number — see /eval.",
   },
   dark_channel_fraction: {
     label: "Dark-channel fraction",
-    short: "Share of users with no attributable touchpoint.",
-    long: "Hard floor on what attribution can measure. Any CAC analysis must surface this fraction alongside the answer.",
+    short: "Share of users arriving through unmeasurable surfaces.",
+    long: "17.6% of W01 users come in through WhatsApp forwards, Telegram @indiastox shares, IRL screenshots — surfaces that carry no UTM and no consent-bound identifier. The CAC bound is wide because the substrate types the uncertainty (channel_cac_bounds returns a lower + upper interval) rather than collapsing it to a point estimate. Any attribution-side proposal is bounded by this floor.",
   },
   metric_gameability_index: {
     label: "Gameability index",
@@ -61,12 +61,12 @@ export const METRICS: Record<string, GlossaryEntry> = {
     long: "Tracks definition_hash_drift (did the SQL change?), source_table_drift (did dim_user gain rows?), value_outlier_drift (is the number anomalously far from its 30-day baseline?). Treat any nonzero value as load-bearing.",
   },
   time_to_first_action: {
-    label: "Time to first action",
-    short: "Median minutes from signup to first prediction.",
+    label: "Time to first call",
+    short: "Median minutes from signup to first BULL/BEAR call.",
   },
   weekly_active_posters: {
-    label: "Weekly active posters",
-    short: "Users who posted at least one prediction in the 7-day window.",
+    label: "Weekly active callers",
+    short: "Users who made at least one BULL/BEAR call in the 7-day window.",
   },
   unstop_to_participation_rate: {
     label: "Unstop → participation",
