@@ -1,0 +1,42 @@
+.git
+.github
+.claude
+.idea
+.vscode
+.DS_Store
+*.swp
+
+# Frontend ships separately to Vercel.
+frontend/
+ui/
+
+# Build / cache
+**/__pycache__/
+**/*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+node_modules/
+.next/
+
+# Local logs
+*.log
+logs/
+
+# Local secrets — set ANTHROPIC_API_KEY via the platform env vars.
+.env
+.env.*
+!.env.example
+
+# Drop the dev baseline copy; the live demo regenerates state in-process.
+warehouse/indiastox.baseline.duckdb
+
+# Render config + Vercel artifacts the API container doesn't need.
+render.yaml
+vercel.json
+metabase_data/
+
+# Pitch deck draft sitting in the repo root.
+Fewwords Pitch Deck *.html

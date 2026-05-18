@@ -1,0 +1,89 @@
+proposal_id: PROP-e8c739fe4d83
+created_ts: '2026-05-18T11:01:36.401390Z'
+triggered_by_action_id: act-ca0fe19fab6648e3
+hypothesis: UTM landing page mismatch between Unstop ad creative and challenge landing
+  page increases bounce before signup completion.
+affected_metric: ghost_rate
+expected_lift_pct: -12.0
+confidence: 0.55
+required_sample_n: 500
+estimated_days: 14
+finding: "ghost_rate jumped from 18.2% to 28.6% for Unstop cohort (\u0394 +10.4pp)"
+proposed_experiment: 'A/B test Unstop landing page: control = /challenge, variant
+  = /challenge?cohort=unstop with personalized copy referencing college context.'
+metric_snapshot:
+  metric_name: ghost_rate
+  value: 0.2858187134502924
+  confidence: 0.73
+  sample_n: 1368
+  window_open: false
+  definition_version: 1.0.0
+  provenance:
+  - deterministic_match:1632
+  - probabilistic_match:344
+  - low_confidence:24
+  - cohort_filter:unstop
+  - cohort_size:1368
+  - ghost_count:391
+  interpretation: 391/1368 (28.6%) of unstop cohort made zero predictions in 7 days.
+    Window closed.
+generator: experiment_loop_v2
+critique:
+  critique_id: CRIT-433c8ae7767a
+  generated_at: '2026-05-18T11:01:36.521110Z'
+  proposal_id: PROP-e8c739fe4d83
+  severity: high
+  counter_argument: "The proposal targets a 12pp lift on `ghost_rate` by changing\
+    \ the utm landing page mismatch between unstop ad creative and challenge landing\
+    \ page increases bounce before signup completion, requiring n\u2248500. Pausing\
+    \ or restricting an attributable channel concentrates the cohort on the 17.6%\
+    \ dark fraction the team can't currently bound CAC for. Acquisition diversity\
+    \ costs go up before they go down.\nDATA-DRIVEN CONCERNS \u2014 3 confounder(s)\
+    \ actually fire against the current substrate:\n  \u2022 klaviyo_deliverability_drop:\
+    \ data_quality scan: 27/672 email-pairs (4.0%) have opened.ts < sent.ts. FIRES\
+    \ (>1% threshold).\n  \u2022 prediction_market_noise_floor: brier_score = 0.3053\
+    \ (random-guess baseline = 0.25). FIRES \u2014 predictions near noise floor; channel\
+    \ intervention may be misdirected.\n  \u2022 dark_channel_dominance: dark_channel_fraction\
+    \ = 17.6%. FIRES \u2014 attribution-side interventions are bounded by this floor."
+  confounder_checks:
+  - name: klaviyo_deliverability_drop
+    fired: true
+    evidence: 'data_quality scan: 27/672 email-pairs (4.0%) have opened.ts < sent.ts.
+      FIRES (>1% threshold).'
+  - name: prediction_market_noise_floor
+    fired: true
+    evidence: "brier_score = 0.3053 (random-guess baseline = 0.25). FIRES \u2014 predictions\
+      \ near noise floor; channel intervention may be misdirected."
+  - name: identity_resolution_drift
+    fired: false
+    evidence: "metric_gameability_index = 0.00. does NOT fire \u2014 all metrics at\
+      \ original hash."
+  - name: dark_channel_dominance
+    fired: true
+    evidence: "dark_channel_fraction = 17.6%. FIRES \u2014 attribution-side interventions\
+      \ are bounded by this floor."
+  - name: exam_season_seasonality
+    fired: false
+    evidence: calendar context not in the substrate; confounder UNVERIFIABLE today
+  confounders_fired:
+  - klaviyo_deliverability_drop
+  - prediction_market_noise_floor
+  - dark_channel_dominance
+  acquisition_impact:
+    relevant_metric: dark_channel_fraction
+    value: 0.17590361445783131
+    note: Pausing or restricting an attributable channel concentrates the cohort on
+      the 17.6% dark fraction the team can't currently bound CAC for. Acquisition
+      diversity costs go up before they go down.
+  reversibility_cost: "medium \u2014 2-3 weeks, reversible but with a sprint of follow-up\
+    \ to unwind"
+  alternative_proposal: 'Run a 1-week creative-only A/B on the Unstop landing page
+    (don''t pause spend). Compare ghost_rate of variant-cohort vs control-cohort within
+    Unstop using the same metric_version. Before launching, individually rule out
+    the fired confounders (klaviyo_deliverability_drop, prediction_market_noise_floor,
+    dark_channel_dominance): for klaviyo_deliverability_drop, audit the email stream
+    timestamps in the prior 7 days; for identity_resolution_drift, freeze the metric_versions
+    table and re-run reproduce; for prediction_market_noise_floor, compare Brier across
+    cohorts before declaring the variant a winner.'
+  session_id: sess-21c59af837a8
+  critic_version: 2.0.0

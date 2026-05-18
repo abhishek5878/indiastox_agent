@@ -1,0 +1,21 @@
+user_id: 05a63e32-c896-c6e6-0fbf-a8959181bc0b
+risk_score: 6.537728378384256
+intervention_text: "You made 2 predictions in your first week \u2014 none of the closed\
+  \ ones landed. That's noise at phi 203, not signal. Try a different sector: your\
+  \ calls were all in HCLTECH. Pick one stock from the leaderboard top-5 this week\
+  \ and make one prediction. If you don't, the rating goes stale."
+tone: analytical
+grounding_facts:
+- predictions_made=2
+- predictions_correct=0
+- mu=1383
+- "phi=203  (rating uncertainty high \u2014 need more calls)"
+- acquisition_channel=unstop
+- called_tickers=HCLTECH,SBIN
+- last_call=2024-01-02T15:09:00_on_SBIN
+estimated_reactivation_lift: 0.05
+estimated_reactivation_lift_confidence: 0.4
+channel: unstop
+primary_ticker: HCLTECH
+n_predictions: 2
+n_correct: 0

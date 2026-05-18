@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: indiastox-api
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: PYTHONUNBUFFERED
+        value: "1"

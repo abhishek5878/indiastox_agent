@@ -1,0 +1,30 @@
+proposal_id: PROP-a2878551c306
+created_ts: '2026-05-16T17:31:24.840802Z'
+triggered_by_action_id: act-b96ca3d01d054106
+hypothesis: UTM landing page mismatch between Unstop ad creative and challenge landing
+  page increases bounce before signup completion.
+affected_metric: ghost_rate
+expected_lift_pct: -12.0
+confidence: 0.55
+required_sample_n: 500
+estimated_days: 14
+finding: "ghost_rate jumped from 18.2% to 28.6% for Unstop cohort (\u0394 +10.4pp)"
+proposed_experiment: 'A/B test Unstop landing page: control = /challenge, variant
+  = /challenge?cohort=unstop with personalized copy referencing college context.'
+metric_snapshot:
+  metric_name: ghost_rate
+  value: 0.2858187134502924
+  confidence: 0.73
+  sample_n: 1368
+  window_open: false
+  definition_version: 1.0.0
+  provenance:
+  - deterministic_match:1632
+  - probabilistic_match:344
+  - low_confidence:24
+  - cohort_filter:unstop
+  - cohort_size:1368
+  - ghost_count:391
+  interpretation: 391/1368 (28.6%) of unstop cohort made zero predictions in 7 days.
+    Window closed.
+generator: experiment_loop_v2

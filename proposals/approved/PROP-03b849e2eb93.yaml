@@ -1,0 +1,66 @@
+proposal_id: PROP-03b849e2eb93
+created_ts: '2026-05-17T06:26:33.857420Z'
+triggered_by_action_id: act-d176b43c81fd45b3
+hypothesis: UTM landing page mismatch between Unstop ad creative and challenge landing
+  page increases bounce before signup completion.
+affected_metric: ghost_rate
+expected_lift_pct: -12.0
+confidence: 0.55
+required_sample_n: 500
+estimated_days: 14
+finding: "ghost_rate jumped from 18.2% to 28.6% for Unstop cohort (\u0394 +10.4pp)"
+proposed_experiment: 'A/B test Unstop landing page: control = /challenge, variant
+  = /challenge?cohort=unstop with personalized copy referencing college context.'
+metric_snapshot:
+  metric_name: ghost_rate
+  value: 0.2858187134502924
+  confidence: 0.73
+  sample_n: 1368
+  window_open: false
+  definition_version: 1.0.0
+  provenance:
+  - deterministic_match:1632
+  - probabilistic_match:344
+  - low_confidence:24
+  - cohort_filter:unstop
+  - cohort_size:1368
+  - ghost_count:391
+  interpretation: 391/1368 (28.6%) of unstop cohort made zero predictions in 7 days.
+    Window closed.
+generator: experiment_loop_v2
+critique:
+  critique_id: CRIT-5266ef9cff89
+  generated_at: '2026-05-17T06:26:33.888165Z'
+  proposal_id: PROP-03b849e2eb93
+  severity: high
+  counter_argument: "The proposal targets a 12pp lift on `ghost_rate` by changing\
+    \ the utm landing page mismatch between unstop ad creative and challenge landing\
+    \ page increases bounce before signup completion, requiring n\u2248500. Pausing\
+    \ or restricting an attributable channel concentrates the cohort on the 17.6%\
+    \ dark fraction the team can't currently bound CAC for. Acquisition diversity\
+    \ costs go up before they go down. Before acting, at least one of these confounders\
+    \ should be individually ruled out: college exam-season seasonality (Indian academic\
+    \ calendar W01 \u2248 end-of-semester crunch); Klaviyo deliverability shift (open-rate\
+    \ drop \u2260 creative problem)."
+  confounders_to_rule_out:
+  - "college exam-season seasonality (Indian academic calendar W01 \u2248 end-of-semester\
+    \ crunch)"
+  - "Klaviyo deliverability shift (open-rate drop \u2260 creative problem)"
+  - 'identity-resolution drift: ~17% probabilistic matches mean the dark cohort''s
+    true ghost rate is bounded, not measured'
+  - prediction-market liquidity drop (fewer interesting calls available, not fewer
+    interested users)
+  acquisition_impact:
+    relevant_metric: dark_channel_fraction
+    value: 0.17590361445783131
+    note: Pausing or restricting an attributable channel concentrates the cohort on
+      the 17.6% dark fraction the team can't currently bound CAC for. Acquisition
+      diversity costs go up before they go down.
+  reversibility_cost: "medium \u2014 2-3 weeks, reversible but with a sprint of follow-up\
+    \ to unwind"
+  alternative_proposal: Run a 1-week creative-only A/B on the Unstop landing page
+    (don't pause spend). Compare ghost_rate of variant-cohort vs control-cohort within
+    Unstop using the same metric_version. Decide on full creative rollout based on
+    the 7-day point estimate + a 4-week extrapolation that survives the exam-season
+    confounder.
+  session_id: sess-b17da65c08a2

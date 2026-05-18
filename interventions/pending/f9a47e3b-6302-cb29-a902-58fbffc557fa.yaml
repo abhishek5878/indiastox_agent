@@ -1,0 +1,21 @@
+user_id: f9a47e3b-6302-cb29-a902-58fbffc557fa
+risk_score: 6.724242064544132
+intervention_text: "You made 2 predictions in your first week \u2014 none of the closed\
+  \ ones landed. That's noise at phi 215, not signal. Try a different sector: your\
+  \ calls were all in SBIN. Pick one stock from the leaderboard top-5 this week and\
+  \ make one prediction. If you don't, the rating goes stale."
+tone: analytical
+grounding_facts:
+- predictions_made=2
+- predictions_correct=0
+- mu=1260
+- "phi=215  (rating uncertainty high \u2014 need more calls)"
+- acquisition_channel=unstop
+- called_tickers=ITC,SBIN
+- last_call=2024-01-03T16:12:00_on_ITC
+estimated_reactivation_lift: 0.05
+estimated_reactivation_lift_confidence: 0.4
+channel: unstop
+primary_ticker: SBIN
+n_predictions: 2
+n_correct: 0

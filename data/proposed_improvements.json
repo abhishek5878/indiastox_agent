@@ -1,0 +1,41 @@
+{
+  "generated_at": "2026-05-18T11:29:06.439680+00:00",
+  "eval_run": "2026-05-18T11:29:06.438725+00:00",
+  "total_score": 30,
+  "max_total": 33,
+  "improvements": [
+    {
+      "question_id": "Q01",
+      "kind": "calibration_markers_missing",
+      "category": "calibration",
+      "rationale": "Q01 calibration=0: required substrings absent in the agent's calibration string. The agent has the data (confidence + window_open are populated on every MetricResult) but the surface text doesn't name them by their canonical keywords.",
+      "proposed_change": {
+        "target": "agent/growth_agent.py",
+        "change_type": "enrich_calibration_template",
+        "note": "Update `_calibration_string` to explicitly include the words 'confidence', 'window_open', 'sample_n', and 'interpretation:' as labels \u2014 not just the values. The agent reads these out to a human downstream; keywords matter."
+      }
+    },
+    {
+      "question_id": "Q11",
+      "kind": "calibration_markers_missing",
+      "category": "calibration",
+      "rationale": "Q11 calibration=0: required substrings absent in the agent's calibration string. The agent has the data (confidence + window_open are populated on every MetricResult) but the surface text doesn't name them by their canonical keywords.",
+      "proposed_change": {
+        "target": "agent/growth_agent.py",
+        "change_type": "enrich_calibration_template",
+        "note": "Update `_calibration_string` to explicitly include the words 'confidence', 'window_open', 'sample_n', and 'interpretation:' as labels \u2014 not just the values. The agent reads these out to a human downstream; keywords matter."
+      }
+    },
+    {
+      "question_id": "Q11",
+      "kind": "action_markers_missing",
+      "category": "action",
+      "rationale": "Q11 action=0: the proposed next-step lacks the required keywords. Either the action is generic (no anchor to the number) or it omits the canonical word the eval was looking for.",
+      "proposed_change": {
+        "target": "agent/growth_agent.py",
+        "change_type": "enrich_action_template",
+        "note": "For Q11, ensure the action text mentions the canonical keyword from the YAML's action_markers. Anchor the action directly to the metric value (e.g. 'because ghost_rate is X%' rather than 'monitor weekly')."
+      }
+    }
+  ]
+}
