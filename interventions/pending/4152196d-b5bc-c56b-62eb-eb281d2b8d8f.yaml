@@ -1,0 +1,22 @@
+user_id: 4152196d-b5bc-c56b-62eb-eb281d2b8d8f
+risk_score: 6.4672976200996874
+intervention_text: "Your BULL on ICICIBANK closed the other way \u2014 that's normal\
+  \ at this sample size, but the next 3 calls will move your rating more than this\
+  \ one did. Quiet week \u2014 2 calls on the board, mu 1260 with phi 215. Inactivity\
+  \ is the fastest way to lose Gyaani standing on the W01 leaderboard. One Make-a-Call\
+  \ before Sunday keeps your rating live. The leaderboard cutoff is the weekly close."
+tone: analytical
+grounding_facts:
+- calls_made=2
+- calls_correct=0
+- mu=1260
+- phi=214.9
+- acquisition_channel=unstop
+- called_tickers=ICICIBANK,INFY
+- last_resolved=2024-01-03T22:22:00_ICICIBANK_BULL_LOSS
+estimated_reactivation_lift: 0.05
+estimated_reactivation_lift_confidence: 0.4
+channel: unstop
+primary_ticker: INFY
+n_predictions: 2
+n_correct: 0

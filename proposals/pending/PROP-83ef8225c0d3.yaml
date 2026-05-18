@@ -1,0 +1,69 @@
+proposal_id: PROP-83ef8225c0d3
+created_ts: '2026-05-18T20:08:59.953186+00:00'
+triggered_by_action_id: act-82988899049e495e
+hypothesis: Shipping an AI-authored-analysis detector on user-submitted posts would
+  lift downstream brier_score by 3.5pp by removing low-information posts from the
+  feed-weighting layer. Currently the feed treats AI-generated thesis posts as user-authored,
+  which contaminates the calibration signal the Gyaani rating uses.
+affected_metric: brier_score
+expected_lift_pct: -3.5
+confidence: 0.42
+required_sample_n: 8500
+estimated_days: 28
+finding: 'Manual sample of 200 W01 analysis posts: 23 (11.5%) are clearly AI-authored;
+  their authors'' brier scores are 0.32 vs 0.28 for organic-author cohort (+4pp worse).'
+proposed_experiment: 'Deploy detector on 100% of submissions for 28 days. Flag (not
+  block) suspected AI posts. Measure: (a) feed-weighted brier_score on flagged-removed
+  vs full-corpus, (b) false-positive rate via human review on 5% random sample, (c)
+  author churn on flagged accounts.'
+metric_snapshot:
+  metric_name: brier_score
+  value: 0.3053
+  confidence: 0.85
+  sample_n: 1872
+  window_open: false
+  definition_version: 1.0.0
+  provenance:
+  - resolved_calls:1872
+  - baseline:random_0.25
+  interpretation: Mean Brier across 1872 resolved calls. Near the random-guess floor.
+generator: policy_loop_v1
+critique:
+  critique_id: CRIT-e31271a93232
+  generated_at: '2026-05-18T20:08:59.953186+00:00'
+  proposal_id: PROP-83ef8225c0d3
+  severity: low
+  counter_argument: "This is the right kind of policy proposal \u2014 it targets the\
+    \ substrate's calibration directly rather than acquisition. The risk is detector\
+    \ quality: a 5% false-positive rate at the scale of 8500 submissions silently\
+    \ bans 425 organic authors, which compounds across weeks.\nDATA-DRIVEN CONCERNS\
+    \ \u2014 1 confounder fires:\n  \u2022 prediction_market_noise_floor: brier_score\
+    \ = 0.3053 \u2014 already near the noise floor. Removing 11.5% of posts may not\
+    \ be enough lift to detect over the floor's variance."
+  confounder_checks:
+  - name: klaviyo_deliverability_drop
+    fired: false
+    evidence: Detector lives in post-submission path; email infra unaffected.
+  - name: prediction_market_noise_floor
+    fired: true
+    evidence: "brier_score = 0.3053. FIRES \u2014 3.5pp lift may not surface above\
+      \ floor variance at n=8500."
+  - name: identity_resolution_drift
+    fired: false
+    evidence: metric_gameability_index = 0.00.
+  - name: dark_channel_dominance
+    fired: false
+    evidence: Detector operates per-submission, channel-agnostic.
+  - name: exam_season_seasonality
+    fired: false
+    evidence: Submission volumes vary <2pp seasonally; not load-bearing.
+  confounders_fired: 1
+  acquisition_impact: "zero \u2014 does not touch acquisition path."
+  reversibility_cost: "medium \u2014 false-flagged authors need a human appeals path\
+    \ before launch."
+  alternative_proposal: "Ship the detector in shadow mode for 14 days first \u2014\
+    \ flag but don't act. Use the shadow data to calibrate the precision/recall threshold\
+    \ before any user-visible action. The headline brier lift should be measured against\
+    \ the shadow baseline, not the pre-detector baseline."
+  session_id: policy-598fa6bfed2e
+  critic_version: 2.0.0

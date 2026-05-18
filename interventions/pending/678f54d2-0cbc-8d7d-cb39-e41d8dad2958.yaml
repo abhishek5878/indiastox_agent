@@ -1,0 +1,22 @@
+user_id: 678f54d2-0cbc-8d7d-cb39-e41d8dad2958
+risk_score: 6.31938095343302
+intervention_text: "Your BEAR on ICICIBANK closed the other way \u2014 that's normal\
+  \ at this sample size, but the next 3 calls will move your rating more than this\
+  \ one did. Quiet week \u2014 2 calls on the board, mu 1260 with phi 215. Inactivity\
+  \ is the fastest way to lose Gyaani standing on the W01 leaderboard. One Make-a-Call\
+  \ before Sunday keeps your rating live. The leaderboard cutoff is the weekly close."
+tone: analytical
+grounding_facts:
+- calls_made=2
+- calls_correct=0
+- mu=1260
+- phi=214.9
+- acquisition_channel=unstop
+- called_tickers=BAJFINANCE,ICICIBANK
+- last_resolved=2024-01-09T16:44:00_ICICIBANK_BEAR_LOSS
+estimated_reactivation_lift: 0.05
+estimated_reactivation_lift_confidence: 0.4
+channel: unstop
+primary_ticker: BAJFINANCE
+n_predictions: 2
+n_correct: 0

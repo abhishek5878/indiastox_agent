@@ -1,0 +1,22 @@
+user_id: b382ff17-3005-acde-03f3-11bdfc5c3638
+risk_score: 6.211426562904343
+intervention_text: "Your BEAR on HCLTECH closed flat \u2014 at phi 215 we can't tell\
+  \ if that was a coin flip or a read. 2 calls this week, none of the resolved ones\
+  \ landed. At phi 215 that's still noise \u2014 your priors haven't been challenged\
+  \ yet. Step outside RELIANCE: pick a stock from a different sector and make one\
+  \ BULL/BEAR call. The rating won't tighten until the cohort spans 2+ sectors."
+tone: analytical
+grounding_facts:
+- calls_made=2
+- calls_correct=0
+- mu=1380
+- phi=214.9
+- acquisition_channel=unstop
+- called_tickers=HCLTECH,RELIANCE
+- last_resolved=2024-01-08T15:13:00_HCLTECH_BEAR_DRAW
+estimated_reactivation_lift: 0.05
+estimated_reactivation_lift_confidence: 0.4
+channel: unstop
+primary_ticker: RELIANCE
+n_predictions: 2
+n_correct: 0

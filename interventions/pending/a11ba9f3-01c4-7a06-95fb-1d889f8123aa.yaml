@@ -1,0 +1,23 @@
+user_id: a11ba9f3-01c4-7a06-95fb-1d889f8123aa
+risk_score: 6.816603175655242
+intervention_text: "Your BEAR on BAJFINANCE closed the other way \u2014 that's normal\
+  \ at this sample size, but the next 3 calls will move your rating more than this\
+  \ one did. 2 calls this week, none of the resolved ones landed. At phi 215 that's\
+  \ still noise \u2014 your priors haven't been challenged yet. Step outside BAJFINANCE:\
+  \ pick a stock from a different sector and make one BULL/BEAR call. The rating won't\
+  \ tighten until the cohort spans 2+ sectors."
+tone: analytical
+grounding_facts:
+- calls_made=2
+- calls_correct=0
+- mu=1260
+- phi=214.9
+- acquisition_channel=unstop
+- called_tickers=BAJFINANCE
+- last_resolved=2024-01-08T15:50:00_BAJFINANCE_BEAR_LOSS
+estimated_reactivation_lift: 0.05
+estimated_reactivation_lift_confidence: 0.4
+channel: unstop
+primary_ticker: BAJFINANCE
+n_predictions: 2
+n_correct: 0

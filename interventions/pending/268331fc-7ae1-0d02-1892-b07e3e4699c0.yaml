@@ -1,0 +1,22 @@
+user_id: 268331fc-7ae1-0d02-1892-b07e3e4699c0
+risk_score: 7.388825397877465
+intervention_text: "Your BULL on HCLTECH closed the other way \u2014 that's normal\
+  \ at this sample size, but the next 3 calls will move your rating more than this\
+  \ one did. Quiet week \u2014 2 calls on the board, mu 1260 with phi 215. Inactivity\
+  \ is the fastest way to lose Gyaani standing on the W01 leaderboard. One Make-a-Call\
+  \ before Sunday keeps your rating live. The leaderboard cutoff is the weekly close."
+tone: analytical
+grounding_facts:
+- calls_made=2
+- calls_correct=0
+- mu=1260
+- phi=214.9
+- acquisition_channel=unstop
+- called_tickers=HCLTECH,RELIANCE
+- last_resolved=2024-01-03T00:15:00_HCLTECH_BULL_LOSS
+estimated_reactivation_lift: 0.05
+estimated_reactivation_lift_confidence: 0.4
+channel: unstop
+primary_ticker: RELIANCE
+n_predictions: 2
+n_correct: 0
