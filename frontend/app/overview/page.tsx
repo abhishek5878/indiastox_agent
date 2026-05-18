@@ -14,6 +14,7 @@ export default function OverviewPage() {
   const [concentration, setConcentration] = useState<MetricResult | null>(null);
   const [cascadeLift, setCascadeLift] = useState<MetricResult | null>(null);
   const [influence, setInfluence] = useState<MetricResult | null>(null);
+  const [disengagement, setDisengagement] = useState<MetricResult | null>(null);
   const [reasons, setReasons] = useState<{ reason: string; n: number }[]>([]);
 
   useEffect(() => {
@@ -25,6 +26,7 @@ export default function OverviewPage() {
     metrics.invoke("behavioral_concentration_index", { week_of: "2024-W01" }).then(setConcentration).catch(() => {});
     metrics.invoke("cascade_followon_lift", { week_of: "2024-W01" }).then(setCascadeLift).catch(() => {});
     metrics.invoke("gyaani_influence_index", { week_of: "2024-W01" }).then(setInfluence).catch(() => {});
+    metrics.invoke("user_disengagement_rate", {}).then(setDisengagement).catch(() => {});
     sim.reasons().then(setReasons).catch(() => {});
   }, []);
 
@@ -118,25 +120,25 @@ export default function OverviewPage() {
 
       <div className="mb-5">
         <div className="text-xs font-medium tracking-widest text-[var(--muted-foreground)] uppercase mb-3">Consumer behavior</div>
-        <div className="grid grid-cols-3 gap-4 mb-4">
+        <div className="grid grid-cols-4 gap-4 mb-4">
           <ProductCard
             title="Behavioral concentration"
             valueText={concentration ? concentration.value.toFixed(2) : ""}
-            subtitle={concentration ? `${concentration.sample_n} users, mean ${((concentration.breakdowns as any)?.mean_distinct || 0).toFixed(1)} tickers each` : "loading"}
+            subtitle={concentration ? `${concentration.sample_n} users, ${((concentration.breakdowns as any)?.mean_distinct || 0).toFixed(1)} tickers` : "loading"}
             hint={METRICS.behavioral_concentration_index.long || METRICS.behavioral_concentration_index.short}
             body={concentration?.interpretation || "Mean per-user Herfindahl on ticker distribution. Typical retail lands 0.35-0.55."}
             badge={concentration && (concentration.breakdowns as any)?.buckets ? (() => {
               const b: any = (concentration.breakdowns as any).buckets;
-              return `${b.concentrated_0_75_plus} concentrated · ${b.exploratory_under_0_25} exploring`;
+              return `${b.concentrated_0_75_plus}c · ${b.exploratory_under_0_25}e`;
             })() : null}
           />
           <ProductCard
-            title="Cascade follow-on lift"
+            title="Cascade follow-on"
             valueText={cascadeLift ? `${cascadeLift.value.toFixed(2)}x` : ""}
-            subtitle={cascadeLift ? `${cascadeLift.sample_n} cascades, last 7d sim` : "no cascades yet"}
+            subtitle={cascadeLift ? `${cascadeLift.sample_n} cascades · 7d` : "no cascades yet"}
             hint={METRICS.cascade_followon_lift.long || METRICS.cascade_followon_lift.short}
-            body={cascadeLift?.interpretation || "Ratio of post-cascade call rate to baseline on the same ticker. Lift > 1 = organic FOMO follow-on."}
-            badge={cascadeLift && cascadeLift.value > 1.5 ? "strong follow-on" : cascadeLift && cascadeLift.value > 1 ? "mild follow-on" : null}
+            body={cascadeLift?.interpretation || "Post-cascade call rate vs baseline. Lift > 1 = organic FOMO follow-on."}
+            badge={cascadeLift && cascadeLift.value > 1.5 ? "strong" : cascadeLift && cascadeLift.value > 1 ? "mild" : null}
             tone="info"
           />
           <ProductCard
@@ -144,8 +146,17 @@ export default function OverviewPage() {
             valueText={influence ? `${(influence.value * 100).toFixed(1)}%` : ""}
             subtitle={influence ? `${influence.sample_n} calls in window` : "no sim data yet"}
             hint={METRICS.gyaani_influence_index.long || METRICS.gyaani_influence_index.short}
-            body={influence?.interpretation || "Share of recent calls placed via social-proof shadowing of high-Gyaani users."}
-            badge={influence && influence.value > 0.05 ? "leaders moving cohort" : influence && influence.value > 0 ? "modest shadow" : null}
+            body={influence?.interpretation || "Share of calls placed via social-proof shadowing of high-Gyaani users."}
+            badge={influence && influence.value > 0.05 ? "leaders move cohort" : influence && influence.value > 0 ? "modest shadow" : null}
+            tone="info"
+          />
+          <ProductCard
+            title="Disengagement rate"
+            valueText={disengagement ? `${(disengagement.value * 100).toFixed(1)}%` : ""}
+            subtitle={disengagement ? `${((disengagement.breakdowns as any)?.ghosted || 0).toLocaleString()} ghosted · ${((disengagement.breakdowns as any)?.active_7d || 0).toLocaleString()} active` : "loading"}
+            hint={METRICS.user_disengagement_rate.long || METRICS.user_disengagement_rate.short}
+            body={disengagement?.interpretation || "Share of users 5+ sim-days quiet. The CS agent's re-engagement target pool."}
+            badge={disengagement && disengagement.value > 0.3 ? "cs target pool" : null}
             tone="info"
           />
         </div>

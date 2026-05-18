@@ -236,6 +236,9 @@ const KIND_LABELS: Record<string, string> = {
   cs_watcher_fired: "CS watcher fired",
   news_cascade: "News cascade",
   user_cooled_off: "User on cooldown",
+  leaderboard_sprint: "Leaderboard sprint",
+  referral_chain: "Referral chain queued",
+  user_ghosted: "User ghosted",
 };
 
 function EventRow({ evt }: { evt: SimEvent }) {
@@ -243,7 +246,10 @@ function EventRow({ evt }: { evt: SimEvent }) {
     evt.kind === "growth_watcher_fired" ? "warning" :
     evt.kind === "cs_watcher_fired" ? "warning" :
     evt.kind === "user_cooled_off" ? "warning" :
+    evt.kind === "user_ghosted" ? "destructive" :
     evt.kind === "news_cascade" ? "info" :
+    evt.kind === "leaderboard_sprint" ? "info" :
+    evt.kind === "referral_chain" ? "info" :
     evt.kind === "outcome_resolved" ? "success" :
     evt.kind === "persona_joined" ? "info" :
     "default";

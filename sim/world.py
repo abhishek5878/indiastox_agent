@@ -97,6 +97,13 @@ class WorldState:
     # entry: dict(symbol, direction, until). The window closes 60 sim-min
     # after the call so the shadow effect is bounded.
     recent_alpha_calls: list = field(default_factory=list)
+    # Pending referral spawns. Each entry: dict(referrer_id, spawn_at,
+    # remaining_kids). A whatsapp_dark joiner with `referrer` intent queues
+    # 1-2 follow-on joiners over the next 1-2 sim-hours.
+    pending_referrals: list = field(default_factory=list)
+    # User ids currently disengaged (no calls in 5+ sim-days). Excluded from
+    # the candidate pool. A future CS re-engagement tool will clear entries.
+    ghosted_users: set = field(default_factory=set)
 
 
 def fresh_world() -> WorldState:
@@ -193,6 +200,44 @@ def _is_leaderboard_sprint(sim_now: datetime) -> bool:
     or seize position. Their activity multiplier 2x's in this window.
     """
     return sim_now.weekday() == 4 and 14 <= sim_now.hour < 16
+
+
+def _queue_referral_burst(world: WorldState, referrer_id: str, rng: random.Random) -> None:
+    """Whatsapp_dark signups disproportionately bring another whatsapp_dark
+    signup. Queues 1-2 follow-on joiners that fire over the next 1-2 sim-hours.
+    Models the forward-the-link recruitment pattern that the dark-channel
+    attribution layer struggles to bind.
+    """
+    n_kids = rng.choices([1, 2], weights=[70, 30], k=1)[0]
+    spawn_at = world.sim_now + timedelta(minutes=rng.randint(20, 120))
+    world.pending_referrals.append(dict(
+        referrer_id=referrer_id,
+        spawn_at=spawn_at,
+        remaining=n_kids,
+    ))
+
+
+def _pop_referrals_due(world: WorldState) -> list[dict]:
+    """Return + remove referral entries whose spawn_at has been reached."""
+    due, remaining = [], []
+    for r in world.pending_referrals:
+        if r["spawn_at"] <= world.sim_now:
+            due.append(r)
+        else:
+            remaining.append(r)
+    world.pending_referrals = remaining
+    return due
+
+
+def reengage_user(world: WorldState, user_id: str) -> bool:
+    """Clear a user's ghost flag. Called by the CS re-engagement loop in
+    response to an approved intervention. Returns True if the user was
+    actually ghosted (a real recovery) vs already active.
+    """
+    if user_id in world.ghosted_users:
+        world.ghosted_users.discard(user_id)
+        return True
+    return False
 
 
 def _synthetic_occupation(user_id: str) -> str:
@@ -412,14 +457,14 @@ def tick(world: WorldState, *, advance_minutes: int = 60) -> dict:
         _ensure_table(con)
 
         # ---- 1. New joiners ----
-        # 0–3 joiners per simulated hour, biased to mid-day.
+        # 0–3 organic joiners per simulated hour, plus any referral-spawned
+        # whatsapp_dark joiners whose spawn_at is now due.
         n_join = rng_join.choices([0, 1, 2, 3], weights=[20, 40, 30, 10], k=1)[0]
-        for _ in range(n_join):
-            p = _make_persona(rng_join)
-            signup_time = world.sim_now + timedelta(
-                minutes=rng_join.randint(0, max(1, advance_minutes - 1))
-            )
-            p["signup_time"] = signup_time
+        # Pull due referral bursts before the organic loop.
+        due_referrals = _pop_referrals_due(world)
+        referral_kids = sum(r["remaining"] for r in due_referrals)
+
+        def _insert_persona(p: dict, signup_time: datetime, referrer_id: Optional[str] = None) -> None:
             con.execute(
                 """INSERT INTO dim_user
                    (user_id, full_name, personal_email, college_email, phone_hash,
@@ -441,20 +486,52 @@ def tick(world: WorldState, *, advance_minutes: int = 60) -> dict:
                  p["acquisition_source"] if p["acquisition_source"] == "unstop" else None,
                  signup_time],
             )
+            payload = dict(channel=p["acquisition_source"], city=p["city"],
+                           name=p["full_name"], tier=p["city_tier"])
+            if referrer_id:
+                payload["referrer"] = referrer_id[:8]
+            _log_event(con, world, "persona_joined", actor=p["user_id"],
+                       payload=payload, lens="growth")
+
+        for _ in range(n_join):
+            p = _make_persona(rng_join)
+            signup_time = world.sim_now + timedelta(
+                minutes=rng_join.randint(0, max(1, advance_minutes - 1))
+            )
+            p["signup_time"] = signup_time
+            _insert_persona(p, signup_time)
             counters["joined"] += 1
-            _log_event(con, world, "persona_joined",
-                       actor=p["user_id"],
-                       payload=dict(channel=p["acquisition_source"], city=p["city"],
-                                    name=p["full_name"], tier=p["city_tier"]),
-                       lens="growth")
+            # If this joiner came in via whatsapp_dark, queue a referral burst.
+            if p["acquisition_source"] == "whatsapp_dark" and rng_join.random() < 0.35:
+                _queue_referral_burst(world, p["user_id"], rng_join)
+                _log_event(con, world, "referral_chain", actor=p["user_id"],
+                           payload=dict(channel="whatsapp_dark", queued=True),
+                           lens="growth")
+
+        # Spawn referral kids that came due this tick. Each kid is forced
+        # whatsapp_dark and tagged with the referrer in the event payload.
+        for r in due_referrals:
+            for _ in range(r["remaining"]):
+                p = _make_persona(rng_join)
+                p["acquisition_source"] = "whatsapp_dark"
+                signup_time = world.sim_now + timedelta(
+                    minutes=rng_join.randint(0, max(1, advance_minutes - 1))
+                )
+                p["signup_time"] = signup_time
+                _insert_persona(p, signup_time, referrer_id=r["referrer_id"])
+                counters["joined"] += 1
+        if referral_kids:
+            counters["referral_kids"] = referral_kids
 
         # ---- 2. Existing-user calls ----
         # Pick a random sample of active users (called in the last 7 sim days),
-        # then filter out anyone on cooldown. The number of calls placed this
-        # tick is scaled by the time-of-day rhythm.
+        # then filter out anyone on cooldown or ghosted. The number of calls
+        # placed this tick is scaled by the time-of-day rhythm.
         recent_cutoff = world.sim_now - timedelta(days=7)
         candidates = con.execute(
-            """SELECT du.user_id, du.true_skill, du.occupation
+            """SELECT du.user_id, du.true_skill, du.occupation,
+                      (SELECT MAX(made_at) FROM fact_prediction p
+                       WHERE p.user_id = du.user_id) AS last_call_at
                FROM dim_user du
                WHERE du.true_skill IS NOT NULL
                  AND du.signup_time IS NOT NULL
@@ -466,8 +543,27 @@ def tick(world: WorldState, *, advance_minutes: int = 60) -> dict:
                ORDER BY RANDOM() LIMIT 80""",
             [world.sim_now, recent_cutoff],
         ).fetchall()
-        # Drop cooldown users; they capitulated for the next 24h.
-        candidates = [c for c in candidates if not _on_cooldown(world, c[0])]
+
+        # Ghosting: anyone whose last call is 5+ sim-days old transitions to
+        # `ghosted_users` and is excluded from the candidate pool. The CS
+        # agent's re-engagement loop (reengage_user) clears the flag.
+        ghost_threshold = world.sim_now - timedelta(days=5)
+        newly_ghosted = []
+        for row in candidates:
+            user_id, _ts, _occ, last_call_at = row
+            if last_call_at is not None and last_call_at < ghost_threshold:
+                if user_id not in world.ghosted_users:
+                    world.ghosted_users.add(user_id)
+                    newly_ghosted.append((user_id, last_call_at))
+        for user_id, last_call_at in newly_ghosted[:5]:  # cap event spam
+            quiet_days = (world.sim_now - last_call_at).days
+            _log_event(con, world, "user_ghosted", actor=user_id,
+                       payload=dict(quiet_days=int(quiet_days), last_call=str(last_call_at)),
+                       lens="cs")
+
+        # Drop ghosted + cooldown users from this tick's candidate pool.
+        candidates = [(c[0], c[1], c[2]) for c in candidates
+                      if c[0] not in world.ghosted_users and not _on_cooldown(world, c[0])]
         activity = _activity_multiplier(world.sim_now)
         base_target = rng_pred.randint(3, min(15, len(candidates) or 1))
         n_pred_target = max(1, min(len(candidates), int(round(base_target * activity))))
@@ -577,7 +673,8 @@ def tick(world: WorldState, *, advance_minutes: int = 60) -> dict:
         # ---- 3. Outcome resolutions ----
         # Any prediction whose made_at + 5d has passed resolves now.
         to_resolve = con.execute(
-            """SELECT p.prediction_id, p.user_id, p.made_at, du.true_skill, p.stock_symbol, p.direction
+            """SELECT p.prediction_id, p.user_id, p.made_at, du.true_skill,
+                      p.stock_symbol, p.direction, p.confidence_stars
                FROM fact_prediction p
                JOIN dim_user du ON du.user_id = p.user_id
                WHERE p.is_outcome_resolved = FALSE
@@ -585,9 +682,14 @@ def tick(world: WorldState, *, advance_minutes: int = 60) -> dict:
                LIMIT 200""",
             [new_sim_now],
         ).fetchall()
-        for pred_id, user_id, made_at, true_skill, symbol, direction in to_resolve:
+        for pred_id, user_id, made_at, true_skill, symbol, direction, stars in to_resolve:
             ts = float(true_skill or 0.0)
-            p_win = max(0.22, min(0.62, 0.42 + ts * 0.10))
+            # Base win probability from latent skill. Confidence_stars adds a
+            # calibration kicker: 5-star calls land more often than 1-star
+            # calls, even at the same skill level. Bends the calibration curve
+            # toward the diagonal so confidence_stars is informative downstream.
+            star_bias = (int(stars or 3) - 3) * 0.035
+            p_win = max(0.20, min(0.66, 0.42 + ts * 0.10 + star_bias))
             p_draw = 0.08
             p_loss = 1.0 - p_win - p_draw
             outcome = rng_out.choices(["WIN", "LOSS", "DRAW"], weights=[p_win, p_loss, p_draw], k=1)[0]

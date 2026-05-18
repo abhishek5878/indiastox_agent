@@ -44,6 +44,7 @@ from metrics.definitions import (
     behavioral_concentration_index as _behavioral_concentration_index,
     cascade_followon_lift as _cascade_followon_lift,
     gyaani_influence_index as _gyaani_influence_index,
+    user_disengagement_rate as _user_disengagement_rate,
 )
 from metrics.skill import get_skill_distribution as _get_skill_distribution
 
@@ -144,6 +145,11 @@ def gyaani_influence_index(week_of: str = "2024-W01") -> MetricResult:
     return _gyaani_influence_index(week_of)
 
 
+@tool_result
+def user_disengagement_rate() -> MetricResult:
+    return _user_disengagement_rate()
+
+
 TOOLS: dict[str, Callable[..., MetricResult]] = {
     "weekly_active_posters": weekly_active_posters,
     "time_to_first_action": time_to_first_action,
@@ -163,6 +169,7 @@ TOOLS: dict[str, Callable[..., MetricResult]] = {
     "behavioral_concentration_index": behavioral_concentration_index,
     "cascade_followon_lift": cascade_followon_lift,
     "gyaani_influence_index": gyaani_influence_index,
+    "user_disengagement_rate": user_disengagement_rate,
 }
 
 

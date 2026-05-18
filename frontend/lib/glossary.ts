@@ -107,6 +107,11 @@ export const METRICS: Record<string, GlossaryEntry> = {
     short: "Share of calls placed via social-proof shadowing of top-Gyaani users.",
     long: "When a user with mu >= 1700 makes a call, lower-mu users have a 60-minute window in which they may shadow that call. This metric is the rolling share of calls placed via that branch over the last 7 sim-days. High value = the cohort follows its leaders. Treat as an upper bound; an alpha-call window closes after 60 sim-minutes.",
   },
+  user_disengagement_rate: {
+    label: "Disengagement rate",
+    short: "Share of users 5+ sim-days quiet — the CS agent's re-engagement target pool.",
+    long: "Each `user_ghosted` sim_event marks a user transitioning from active to disengaged. They're removed from the candidate pool until the CS re-engagement loop (sim.world.reengage_user) clears the flag. This metric is the cohort-level read: the input the CS agent prioritizes interventions against. Closes the loop between the sim and the CS surface.",
+  },
 };
 
 export const TERMS: Record<string, GlossaryEntry> = {

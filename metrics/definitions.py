@@ -47,6 +47,7 @@ DEFS = {
     "behavioral_concentration_index": "1.0.0",
     "cascade_followon_lift": "1.0.0",
     "gyaani_influence_index": "1.0.0",
+    "user_disengagement_rate": "1.0.0",
 }
 
 # Product surface markers. The Pre-IPO ticker tray is a feature on the
@@ -1696,4 +1697,84 @@ def gyaani_influence_index(week_of: str = "2024-W01") -> MetricResult:
             total=total,
             top_shadowed=dict(top_shadowed),
         ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# 19. user_disengagement_rate. Share of users who went 5+ days without a call.
+# ---------------------------------------------------------------------------
+
+@versioned("1.0.0")
+def user_disengagement_rate() -> MetricResult:
+    """Share of users currently disengaged (no calls in 5+ sim-days).
+
+    Reads `user_ghosted` sim_events. Each event marks a user transitioning
+    into the ghosted state; the CS re-engagement loop (sim.world.reengage_user)
+    clears the flag, but until then they're excluded from the sim's candidate
+    pool. This metric is the cohort-level read of that pattern, the input the
+    CS agent prioritizes against.
+    """
+    sql_ghosted = """
+        SELECT actor FROM sim_events WHERE kind = 'user_ghosted'
+    """
+    sql_active = """
+        SELECT COUNT(DISTINCT user_id) FROM fact_prediction
+        WHERE made_at >= (SELECT MAX(made_at) - INTERVAL '7 days' FROM fact_prediction)
+    """
+    con = _connect()
+    try:
+        ghosted_users = {r[0] for r in con.execute(sql_ghosted).fetchall()}
+        active_7d = con.execute(sql_active).fetchone()[0] or 0
+    finally:
+        con.close()
+    total_seen = len(ghosted_users) + int(active_7d)
+    if total_seen == 0:
+        return MetricResult(
+            metric_name="user_disengagement_rate",
+            value=0.0,
+            confidence=0.0,
+            sample_n=0,
+            provenance=["no_sim_users_yet"],
+            window_open=True,
+            interpretation="No sim activity in the warehouse yet. Tick the world to populate.",
+            trace=[
+                "user_disengagement_rate = 0.0 because no sim activity has been logged.",
+                "the metric needs both ghosted and active users to compute a share.",
+                "confidence = 0.00 because sample size is zero.",
+            ],
+            definition_version=DEFS["user_disengagement_rate"],
+            computation_sql="ghosted_count / (ghosted_count + active_7d)",
+            as_of=_now(),
+            breakdowns={},
+        )
+    rate = len(ghosted_users) / total_seen if total_seen else 0.0
+    confidence = min(0.95, 0.4 + 0.001 * total_seen)
+    interp = (
+        f"{len(ghosted_users):,} users currently disengaged (5+ sim-days quiet) vs "
+        f"{int(active_7d):,} active in the last 7 sim-days. "
+        f"Disengagement rate = {rate:.1%}. "
+        f"Each ghosted user is a CS re-engagement target the CS agent draws from."
+    )
+    trace = [
+        f"user_disengagement_rate = {rate:.4f} because {len(ghosted_users)} of {total_seen} sim-seen users went 5+ sim-days without a call.",
+        f"the active 7-day base is {int(active_7d)}; ghosted overflows the candidate pool until a CS intervention clears the flag.",
+        f"confidence = {confidence:.2f} because the count is deterministic but the metric stabilises with thousands of sim users.",
+    ]
+    return MetricResult(
+        metric_name="user_disengagement_rate",
+        value=float(rate),
+        confidence=float(confidence),
+        sample_n=total_seen,
+        provenance=[
+            f"ghosted:{len(ghosted_users)}",
+            f"active_7d:{int(active_7d)}",
+            "threshold:5_sim_days",
+        ],
+        window_open=False,
+        interpretation=interp,
+        trace=trace,
+        definition_version=DEFS["user_disengagement_rate"],
+        computation_sql=sql_ghosted.strip(),
+        as_of=_now(),
+        breakdowns=dict(ghosted=len(ghosted_users), active_7d=int(active_7d)),
     )
