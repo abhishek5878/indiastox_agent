@@ -41,7 +41,7 @@ def render(days: int = 7) -> dict:
         return dict(error="warehouse missing", days=days)
 
     cutoff_iso = (datetime.now(timezone.utc) - timedelta(days=days)).replace(tzinfo=None).isoformat()
-    con = duckdb.connect(str(WAREHOUSE), read_only=True)
+    con = duckdb.connect(str(WAREHOUSE), read_only=False)
     try:
         tools = con.execute(
             """SELECT tool_name, COUNT(*) AS n, AVG(result_confidence) AS mean_conf

@@ -24,6 +24,15 @@ _REPO = Path(__file__).resolve().parents[1]
 if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 
+# Load .env BEFORE anything reads os.environ. Streamlit launched via
+# nohup / detached shells doesn't inherit interactive env; without this
+# the LLM-chat tab false-negatives on ANTHROPIC_API_KEY.
+try:
+    from dotenv import load_dotenv
+    load_dotenv(_REPO / ".env")
+except ImportError:
+    pass
+
 from mcp.tools import TOOLS, ToolSession  # tool registry + audit-logged caller
 
 WAREHOUSE = _REPO / "warehouse" / "indiastox.duckdb"
@@ -43,17 +52,24 @@ st.set_page_config(
 # ---------------------------------------------------------------------------
 
 @st.cache_resource
-def _connect_ro():
-    return duckdb.connect(str(WAREHOUSE), read_only=True)
+def _connect():
+    """Single RW connection cached for the Streamlit session.
+
+    DuckDB rejects opening a second connection to the same file with a
+    different read_only flag in the same process. Tool calls flowing
+    through `ToolSession._log_action` open RW connections to write
+    audit rows; we match that mode here so the two paths coexist.
+    """
+    return duckdb.connect(str(WAREHOUSE), read_only=False)
 
 
 def _connect_rw():
-    return duckdb.connect(str(WAREHOUSE), read_only=False)
+    return _connect()
 
 
 @st.cache_data(ttl=60)
 def df_query(sql: str, params: tuple = ()) -> pd.DataFrame:
-    con = _connect_ro()
+    con = _connect()
     return con.execute(sql, list(params)).df()
 
 
@@ -83,23 +99,217 @@ with st.sidebar:
 
 
 tab_names = [
-    "🏠 Overview",
-    "📊 Metric explorer",
-    "🆔 Identity explorer",
-    "📝 Eval scorecard",
-    "📬 Proposals + critiques",
-    "💬 CS interventions",
-    "🤖 LLM agent chat",
-    "🗂 Audit trail",
+    "Living World",
+    "Overview",
+    "Metric explorer",
+    "Identity explorer",
+    "Eval scorecard",
+    "Proposals + critiques",
+    "CS interventions",
+    "LLM agent chat",
+    "Audit trail",
 ]
 tabs = st.tabs(tab_names)
+# Existing tabs were indexed 0..7; the new Living-World tab is now tabs[0]
+# and everything else shifts +1. References below have been remapped.
+
+
+# ---------------------------------------------------------------------------
+# Tab 0 — Living World (sim demo)
+# ---------------------------------------------------------------------------
+
+import time
+
+from sim.world import WorldState, fresh_world, tick as sim_tick, SIM_T0
+from sim.baseline import restore as sim_restore
+from sim.watchers import growth_watcher_tick, cs_watcher_tick
+
+# Initialise session state for the simulator.
+if "world" not in st.session_state:
+    st.session_state.world = fresh_world()
+if "bg_on" not in st.session_state:
+    st.session_state.bg_on = False
+if "lens" not in st.session_state:
+    st.session_state.lens = "growth"
+
+with tabs[0]:
+    st.header("Living World")
+    st.caption("The W01 baseline as a starting point. Click 'Advance 1 hour' to "
+               "tick the simulator; turn on Background to let it run. Personas "
+               "join, predict, ghost, resolve. Watchers fire when signals move. "
+               "Two lenses: Growth and CS.")
+
+    world: WorldState = st.session_state.world
+    bg_on: bool = st.session_state.bg_on
+
+    # ---------- World clock + controls ----------
+    clock_col, lens_col = st.columns([2, 1])
+    with clock_col:
+        st.markdown(
+            f"### Sim time: `{world.sim_now.strftime('%a %Y-%m-%d %H:%M')}`  "
+            f"·  tick #{world.tick_count}"
+        )
+    with lens_col:
+        new_lens = st.radio("Lens", ["growth", "cs"], horizontal=True,
+                             index=0 if st.session_state.lens == "growth" else 1,
+                             key="lens_picker")
+        if new_lens != st.session_state.lens:
+            st.session_state.lens = new_lens
+            st.rerun()
+
+    btn_col1, btn_col2, btn_col3, btn_col4, btn_col5 = st.columns([1.2, 1.2, 1.2, 1.2, 2])
+    if btn_col1.button("Advance 1 hour", key="adv_1h"):
+        counters = sim_tick(world, advance_minutes=60)
+        growth_watcher_tick(world.sim_now)
+        cs_watcher_tick(world.sim_now)
+        st.toast(f"tick: joined={counters['joined']} "
+                 f"pred={counters['predictions']} resolved={counters['resolved']}")
+        st.rerun()
+    if btn_col2.button("Advance 1 day", key="adv_1d"):
+        with st.spinner("ticking 24 hours..."):
+            agg = dict(joined=0, predictions=0, resolved=0)
+            for _ in range(24):
+                c = sim_tick(world, advance_minutes=60)
+                for k in agg:
+                    agg[k] += c.get(k, 0)
+            growth_watcher_tick(world.sim_now)
+            cs_watcher_tick(world.sim_now)
+        st.toast(f"day: joined={agg['joined']} pred={agg['predictions']} resolved={agg['resolved']}")
+        st.rerun()
+    if btn_col3.button("Background: " + ("ON" if bg_on else "OFF"), key="bg_toggle"):
+        st.session_state.bg_on = not bg_on
+        st.rerun()
+    if btn_col4.button("Reset to W01", key="reset_w01"):
+        sim_restore()
+        st.session_state.world = fresh_world()
+        # Wipe the cached cohort queries.
+        st.cache_data.clear()
+        st.toast("Restored W01 baseline.")
+        st.rerun()
+    btn_col5.markdown(
+        f"Background tick auto-advances 1 hour every 2 seconds when ON. "
+        f"Currently: **{'ON' if bg_on else 'OFF'}**."
+    )
+
+    st.divider()
+
+    # ---------- KPI tiles (lens-sensitive) ----------
+    session = ToolSession()
+    try:
+        ghost = session.call("ghost_rate", week_of="2024-W01", acquisition_source="unstop")
+        dark = session.call("dark_channel_fraction", week_of="2024-W01")
+    except Exception as e:
+        st.error(f"Metric layer error: {e}")
+        ghost = dark = None
+
+    lens = st.session_state.lens
+    if lens == "growth":
+        k1, k2, k3, k4 = st.columns(4)
+        new_personas = df_query(
+            "SELECT COUNT(*) AS n FROM dim_user WHERE _source_system = 'sim.world'"
+        ).iloc[0]["n"]
+        new_preds_24h = df_query(
+            """SELECT COUNT(*) AS n FROM fact_prediction
+               WHERE _source_system = 'sim.world' AND made_at >= ?""",
+            params=(world.sim_now - timedelta(hours=24),),
+        ).iloc[0]["n"]
+        k1.metric("Ghost rate (Unstop)", f"{ghost.value:.1%}" if ghost else "—",
+                  delta=f"conf {ghost.confidence:.2f}" if ghost else None)
+        k2.metric("Dark fraction", f"{dark.value:.1%}" if dark else "—")
+        k3.metric("New personas (sim)", f"{int(new_personas):,}")
+        k4.metric("Preds last 24h (sim)", f"{int(new_preds_24h):,}")
+    else:  # cs lens
+        k1, k2, k3, k4 = st.columns(4)
+        at_risk = df_query(
+            """SELECT COUNT(*) AS n FROM dim_user du
+               WHERE du.signup_time IS NOT NULL
+                 AND du.signup_time < ?
+                 AND NOT EXISTS (
+                   SELECT 1 FROM fact_prediction p
+                   WHERE p.user_id = du.user_id AND p.made_at >= ?
+                 )""",
+            params=(world.sim_now, world.sim_now - timedelta(days=3)),
+        ).iloc[0]["n"]
+        recently_active = df_query(
+            """SELECT COUNT(DISTINCT user_id) AS n FROM fact_prediction
+               WHERE made_at >= ?""",
+            params=(world.sim_now - timedelta(hours=24),),
+        ).iloc[0]["n"]
+        resolved_24h = df_query(
+            """SELECT COUNT(*) AS n FROM fact_prediction
+               WHERE is_outcome_resolved AND resolved_at >= ?""",
+            params=(world.sim_now - timedelta(hours=24),),
+        ).iloc[0]["n"]
+        k1.metric("At-risk users (no preds 3d)", f"{int(at_risk):,}")
+        k2.metric("Recently active (24h)", f"{int(recently_active):,}")
+        k3.metric("Outcomes resolved (24h)", f"{int(resolved_24h):,}")
+        k4.metric("Ghost rate", f"{ghost.value:.1%}" if ghost else "—")
+
+    st.divider()
+
+    # ---------- Event stream ----------
+    st.subheader("Event stream (latest 30)")
+    lens_filter = "AND (lens = ? OR lens = 'all')"
+    try:
+        events = df_query(
+            f"""SELECT sim_ts, wall_ts, kind, actor, payload, lens
+                FROM sim_events
+                WHERE 1=1 {lens_filter}
+                ORDER BY sim_ts DESC, wall_ts DESC LIMIT 30""",
+            params=(lens,),
+        )
+    except Exception:
+        events = pd.DataFrame(columns=["sim_ts", "wall_ts", "kind", "actor", "payload", "lens"])
+
+    if events.empty:
+        st.info("No events yet. Click 'Advance 1 hour' to start the world.")
+    else:
+        # Render as a compact log.
+        events_display = events.copy()
+        events_display["actor_short"] = events_display["actor"].apply(
+            lambda s: (s[:12] + "...") if isinstance(s, str) and len(s) > 12 else (s or "")
+        )
+        for _, row in events_display.iterrows():
+            try:
+                p = json.loads(row["payload"]) if row["payload"] else {}
+            except Exception:
+                p = {}
+            summary = ", ".join(f"{k}={v}" for k, v in list(p.items())[:3])
+            ts = row["sim_ts"].strftime("%m-%d %H:%M") if hasattr(row["sim_ts"], "strftime") else str(row["sim_ts"])[:16]
+            st.text(f"{ts}  [{row['lens']:6s}]  {row['kind']:24s}  {row['actor_short']:14s}  {summary}")
+
+    st.divider()
+
+    # ---------- Watcher state ----------
+    st.subheader("Watcher state (last check)")
+    try:
+        kv = df_query(
+            "SELECT key, value, updated_at FROM sim_kv ORDER BY key"
+        )
+        if kv.empty:
+            st.write("(no watcher state yet — tick once)")
+        else:
+            st.dataframe(kv, use_container_width=True, hide_index=True)
+    except Exception:
+        st.write("(sim_kv not yet created)")
+
+    # ---------- Background loop ----------
+    # Streamlit reruns the script top-to-bottom on each interaction. If
+    # background is on, sleep briefly then trigger a rerun so the world
+    # advances on its own. Cheap because we only re-render the visible tab.
+    if bg_on:
+        time.sleep(2.0)
+        sim_tick(world, advance_minutes=60)
+        growth_watcher_tick(world.sim_now)
+        cs_watcher_tick(world.sim_now)
+        st.rerun()
 
 
 # ---------------------------------------------------------------------------
 # Tab 1 — Overview
 # ---------------------------------------------------------------------------
 
-with tabs[0]:
+with tabs[1]:
     st.header("Overview")
 
     # KPI row.
@@ -153,7 +363,7 @@ with tabs[0]:
 # Tab 2 — Metric explorer
 # ---------------------------------------------------------------------------
 
-with tabs[1]:
+with tabs[2]:
     st.header("Metric explorer")
     st.caption("Every tool returns the same typed `MetricResult`. Slide the params; "
                "watch the trace + provenance update live.")
@@ -220,7 +430,7 @@ with tabs[1]:
 # Tab 3 — Identity explorer
 # ---------------------------------------------------------------------------
 
-with tabs[2]:
+with tabs[3]:
     st.header("Identity explorer")
     st.caption("Search by user_id or email; browse the typed-confidence edges.")
 
@@ -279,7 +489,7 @@ with tabs[2]:
 # Tab 4 — Eval scorecard (interactive)
 # ---------------------------------------------------------------------------
 
-with tabs[3]:
+with tabs[4]:
     st.header("Eval scorecard")
     run = latest_eval_run()
     if not run:
@@ -320,7 +530,7 @@ with tabs[3]:
 # Tab 5 — Proposals + critiques inbox
 # ---------------------------------------------------------------------------
 
-with tabs[4]:
+with tabs[5]:
     st.header("Proposals inbox")
     st.caption("Pending / approved / executed / rejected. Every card carries its Critic-Agent v2.0.0 review inline.")
 
@@ -338,8 +548,8 @@ with tabs[4]:
         doc = _yaml.safe_load(path.read_text())
         crit = doc.get("critique", {})
         sev = crit.get("severity", "?")
-        color = {"high": "🔴", "medium": "🟠", "low": "🟢"}.get(sev, "⚪")
-        with st.expander(f"{color} {path.stem}  ·  status={status}  ·  severity={sev}", expanded=False):
+        sev_label = {"high": "[HIGH]", "medium": "[MED] ", "low": "[LOW] "}.get(sev, "[?]   ")
+        with st.expander(f"{sev_label} {path.stem}  ·  status={status}  ·  severity={sev}", expanded=False):
             st.write(f"**Hypothesis:** {doc.get('hypothesis', '(missing)')}")
             st.write(f"**Affected metric:** `{doc.get('affected_metric', '?')}`  "
                      f"·  expected lift: {doc.get('expected_lift_pct', 0):+.1f}pp  "
@@ -352,7 +562,7 @@ with tabs[4]:
                     fired = sum(1 for c in checks if c["fired"])
                     st.markdown(f"**Confounder checks** — {fired}/{len(checks)} fired:")
                     for c in checks:
-                        icon = "🔥" if c["fired"] else "·"
+                        icon = "FIRED" if c["fired"] else "    -"
                         st.text(f"  {icon}  {c['name']}: {c['evidence']}")
                 st.markdown("**Alternative proposal:**")
                 st.info(crit.get("alternative_proposal", "(none)"))
@@ -384,7 +594,7 @@ with tabs[4]:
 # Tab 6 — CS interventions feed
 # ---------------------------------------------------------------------------
 
-with tabs[5]:
+with tabs[6]:
     st.header("CS interventions")
     st.caption("Personalized at-risk-user nudges from `agent/cs_agent.py`. Each card is grounded in the user's actual ticker history.")
     import yaml as _yaml
@@ -407,7 +617,7 @@ with tabs[5]:
 # Tab 7 — LLM agent chat
 # ---------------------------------------------------------------------------
 
-with tabs[6]:
+with tabs[7]:
     st.header("LLM agent chat")
     st.caption("Live `claude-sonnet-4-6` Growth Agent — reads the same `mcp.tools` substrate.")
 
@@ -422,7 +632,7 @@ with tabs[6]:
                 ans = LLMGrowthAgent().answer("user", prompt)
             st.subheader("Tool trace")
             for t in ans.tool_trace:
-                with st.expander(f"→ {t['tool']}({t['args']})  {'⚠ error' if t['is_error'] else 'OK'}"):
+                with st.expander(f"-> {t['tool']}({t['args']})  {'ERROR' if t['is_error'] else 'OK'}"):
                     st.json(t["result"])
             st.subheader("Agent answer")
             st.markdown(ans.final_text)
@@ -433,7 +643,7 @@ with tabs[6]:
 # Tab 8 — Audit trail
 # ---------------------------------------------------------------------------
 
-with tabs[7]:
+with tabs[8]:
     st.header("Audit trail")
     st.caption("Every tool call. Every proposal. Every human decision.")
 

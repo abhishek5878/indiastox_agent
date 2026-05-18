@@ -71,7 +71,7 @@ def render() -> None:
 
     total = data["total_score"]
     max_total = data["max_total"]
-    fm6_pass = "✓ FM6 PASS (<28)" if total < 28 else "✗ FM6 FAIL (≥28 — eval too easy?)"
+    fm6_pass = "FM6 PASS (<28)" if total < 28 else "FM6 FAIL (>=28 - eval too easy?)"
     ax.set_title(
         f"Agent eval scorecard — {total}/{max_total}   {fm6_pass}\n"
         f"per-Q totals shown above; 0=miss (red), 1=hit (green)",

@@ -48,6 +48,12 @@ llm-demo:
 ui:
 	python3 -m streamlit run ui/app.py
 
+baseline:
+	python3 -m sim.baseline
+
+baseline-restore:
+	python3 -m sim.baseline --restore
+
 cs-run:
 	python3 agent/cs_agent.py
 

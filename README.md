@@ -3,7 +3,7 @@
 ![prediction calibration on W01 synthetic data](assets/calibration_curve.png)
 
 *Prediction calibration on the W01 synthetic data. The realized accuracy
-**bends upward** with confidence_stars (1★≈36% → 5★≈57%) — but stays well
+**bends upward** with confidence_stars (1-star ~ 36% -> 5-star ~ 57%) — but stays well
 below the perfect-calibration diagonal. The pipeline now carries a real
 signal (Pass A / N1): every persona has a latent `true_skill ~ N(0, 1)`
 that biases both their WIN probability AND their confidence_stars. The

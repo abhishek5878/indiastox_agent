@@ -97,7 +97,7 @@ def main() -> None:
     # Label each point with the star bucket + sample size.
     for s_val, p, r_val, count in zip(stars, pred, realized, n):
         ax.annotate(
-            f"{s_val}★ (n={count})",
+            f"{s_val}-star (n={count})",
             xy=(p, r_val),
             xytext=(6, -4),
             textcoords="offset points",
@@ -105,7 +105,7 @@ def main() -> None:
             color="#202124",
         )
 
-    ax.set_xlabel("predicted P(WIN) (from confidence_stars: 1★=0.5 → 5★=0.9)")
+    ax.set_xlabel("predicted P(WIN) (from confidence_stars: 1-star=0.5 -> 5-star=0.9)")
     ax.set_ylabel("realized accuracy on closed outcomes")
     ax.set_xlim(0.45, 0.95)
     ax.set_ylim(0.30, 0.95)
@@ -117,7 +117,7 @@ def main() -> None:
         f"Mean Brier = {brier:.4f}  (random-guess baseline = 0.25)\n"
         f"Synthetic data carries a real signal (N1): WIN probability AND\n"
         f"confidence_stars are both biased by each persona's latent true_skill.\n"
-        f"The realized line BENDS upward with stars (1★→5★ ≈ 36%→57%) but stays\n"
+        f"The realized line BENDS upward with stars (1-star -> 5-star ~ 36% -> 57%) but stays\n"
         f"below the diagonal — the stars→probability mapping is overconfident,\n"
         f"which is the right calibration story for a young product. The\n"
         f"infrastructure to MEASURE calibration is the deliverable; the curve\n"

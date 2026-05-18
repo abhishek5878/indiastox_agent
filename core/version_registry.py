@@ -104,7 +104,7 @@ def get_recorded_hash(metric_name: str) -> Optional[str]:
     """Look up the currently-active hash for a metric. None if unknown."""
     if not WAREHOUSE_DB.exists():
         return None
-    con = duckdb.connect(str(WAREHOUSE_DB), read_only=True)
+    con = duckdb.connect(str(WAREHOUSE_DB), read_only=False)
     try:
         row = con.execute(
             """SELECT definition_hash FROM metric_versions
@@ -119,7 +119,7 @@ def get_recorded_hash(metric_name: str) -> Optional[str]:
 
 if __name__ == "__main__":
     register_all()
-    con = duckdb.connect(str(WAREHOUSE_DB), read_only=True)
+    con = duckdb.connect(str(WAREHOUSE_DB), read_only=False)
     try:
         rows = con.execute(
             """SELECT metric_name, version, SUBSTR(definition_hash, 1, 8) AS hash8,

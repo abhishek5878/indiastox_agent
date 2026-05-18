@@ -119,7 +119,7 @@ def render() -> None:
         print(f"ERROR: {WAREHOUSE} missing. Run `make resolve && make load`.", file=sys.stderr)
         sys.exit(2)
 
-    con = duckdb.connect(str(WAREHOUSE), read_only=True)
+    con = duckdb.connect(str(WAREHOUSE), read_only=False)
     try:
         funnel_steps, funnel_n = _funnel(con)
         attr_sources, attr_rates = _channel_attribution(con)

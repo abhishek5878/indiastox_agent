@@ -43,7 +43,16 @@ DEFS = {
 }
 
 
-def _connect(read_only: bool = True):
+def _connect(read_only: bool = False):
+    """Open a connection to the warehouse.
+
+    Defaults to read_only=False so connections coexist with the
+    Streamlit UI's cached RW connection and ToolSession's audit-log
+    writes (DuckDB rejects mixing read-only and read-write connections
+    to the same file inside one process). All metric functions only
+    SELECT — the RW connection is a same-process compatibility choice,
+    not a semantic statement.
+    """
     if not WAREHOUSE_DB.exists():
         raise FileNotFoundError(f"warehouse not built: {WAREHOUSE_DB}. Run `make resolve` first.")
     return duckdb.connect(str(WAREHOUSE_DB), read_only=read_only)

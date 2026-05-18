@@ -60,7 +60,7 @@ def _check_klaviyo_deliverability(session: ToolSession) -> tuple[bool, str]:
     """
     if not WAREHOUSE.exists():
         return False, "warehouse missing"
-    con = duckdb.connect(str(WAREHOUSE), read_only=True)
+    con = duckdb.connect(str(WAREHOUSE), read_only=False)
     try:
         # Read the most recent data_quality audit row for clock_skew.
         row = con.execute(
@@ -373,7 +373,7 @@ def main() -> None:
     print()
     print(f"CONFOUNDER CHECKS ({sum(1 for cc in c['confounder_checks'] if cc['fired'])}/{len(c['confounder_checks'])} fired):")
     for cc in c["confounder_checks"]:
-        flag = "🔥 FIRED" if cc["fired"] else "·"
+        flag = "[FIRED]" if cc["fired"] else "[   - ]"
         print(f"  {flag}  {cc['name']}")
         print(f"          {cc['evidence']}")
     print()

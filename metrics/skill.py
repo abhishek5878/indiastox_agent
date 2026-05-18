@@ -190,7 +190,7 @@ def update_glicko2(prior: GlickoRating, matches: list[tuple[float, float, float]
 
 def compute_ratings() -> pd.DataFrame:
     """Walk closed prediction outcomes and produce a skill_ratings DataFrame."""
-    con = duckdb.connect(str(WAREHOUSE_DB), read_only=True)
+    con = duckdb.connect(str(WAREHOUSE_DB), read_only=False)
     try:
         rows = con.execute(
             """

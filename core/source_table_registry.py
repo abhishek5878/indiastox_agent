@@ -100,7 +100,7 @@ def count_active() -> dict[str, int]:
     """Per-table count of active (non-deprecated) DDL versions. >1 anywhere = drift."""
     if not WAREHOUSE_DB.exists():
         return {}
-    con = duckdb.connect(str(WAREHOUSE_DB), read_only=True)
+    con = duckdb.connect(str(WAREHOUSE_DB), read_only=False)
     try:
         rows = con.execute(
             """SELECT source_table_name, COUNT(*) FROM source_table_versions
@@ -116,7 +116,7 @@ def historical_count() -> dict[str, int]:
     """Total DDL hashes ever recorded per table. >1 = drift in history."""
     if not WAREHOUSE_DB.exists():
         return {}
-    con = duckdb.connect(str(WAREHOUSE_DB), read_only=True)
+    con = duckdb.connect(str(WAREHOUSE_DB), read_only=False)
     try:
         rows = con.execute(
             """SELECT source_table_name, COUNT(DISTINCT ddl_hash) FROM source_table_versions

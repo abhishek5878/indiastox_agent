@@ -166,7 +166,7 @@ def panel_4_identity_quality(con) -> str:
 def render() -> str:
     if not WAREHOUSE.exists():
         return f"warehouse missing at {WAREHOUSE}. Run `make resolve` first.\n"
-    con = duckdb.connect(str(WAREHOUSE), read_only=True)
+    con = duckdb.connect(str(WAREHOUSE), read_only=False)
     try:
         sections = [
             f"# IndiaStox Weekly — rendered panels\n",

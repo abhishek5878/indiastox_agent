@@ -66,7 +66,7 @@ def find_at_risk_users(top_n: int = 10) -> pd.DataFrame:
         raise FileNotFoundError(f"{SKILL_PARQUET} missing — run `make skill`")
     skill = pd.read_parquet(SKILL_PARQUET)
 
-    con = duckdb.connect(str(WAREHOUSE), read_only=True)
+    con = duckdb.connect(str(WAREHOUSE), read_only=False)
     try:
         # Predictions per user in W01, plus latest made_at.
         preds = con.execute(

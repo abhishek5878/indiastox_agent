@@ -105,7 +105,7 @@ def find_future_dated_events() -> dict[str, Any]:
         SELECT 'fact_acquisition.touchpoint_at', COUNT(*)
         FROM fact_acquisition WHERE touchpoint_at > now()
     """
-    con = duckdb.connect(str(WAREHOUSE_DB), read_only=True)
+    con = duckdb.connect(str(WAREHOUSE_DB), read_only=False)
     try:
         rows = con.execute(sql).fetchall()
     finally:
