@@ -93,6 +93,10 @@ class WorldState:
     # ~2 sim hours after a cascade have a heightened probability of landing on
     # the cascade ticker (FOMO follow-on).
     recent_cascade: Optional[dict] = None
+    # Recent high-Gyaani calls so lower-Gyaani users can shadow them. Each
+    # entry: dict(symbol, direction, until). The window closes 60 sim-min
+    # after the call so the shadow effect is bounded.
+    recent_alpha_calls: list = field(default_factory=list)
 
 
 def fresh_world() -> WorldState:
@@ -159,8 +163,36 @@ def _record_call(world: WorldState, user_id: str, symbol: str) -> None:
     s = world.user_state.setdefault(user_id, {
         "streak": [], "cooldown_until": None,
         "ticker_history": {}, "loss_tickers": {}, "stars_offset": 0,
+        "anchor_ticker": None,
     })
     s["ticker_history"][symbol] = s["ticker_history"].get(symbol, 0) + 1
+    # Anchor on first call. Lock-in is intentional: real users do return
+    # disproportionately to the first thing they touched.
+    if s.get("anchor_ticker") is None:
+        s["anchor_ticker"] = symbol
+
+
+def _record_alpha_call(world: WorldState, symbol: str, direction: str) -> None:
+    """High-Gyaani users move the cohort. Record their call so lower-mu users
+    can shadow it within the next 60 sim-minutes."""
+    world.recent_alpha_calls.append(dict(
+        symbol=symbol,
+        direction=direction,
+        until=world.sim_now + timedelta(minutes=60),
+    ))
+    # Cap the list so memory stays bounded.
+    if len(world.recent_alpha_calls) > 20:
+        world.recent_alpha_calls = world.recent_alpha_calls[-20:]
+
+
+def _is_leaderboard_sprint(sim_now: datetime) -> bool:
+    """True during the last-day trading hours of the simulated week.
+
+    Friday afternoon (weekday 4, hours 14-16 local) is when leaderboard
+    rankings get locked for the week; high-rank users sprint to defend
+    or seize position. Their activity multiplier 2x's in this window.
+    """
+    return sim_now.weekday() == 4 and 14 <= sim_now.hour < 16
 
 
 def _synthetic_occupation(user_id: str) -> str:
@@ -171,38 +203,60 @@ def _synthetic_occupation(user_id: str) -> str:
     return "Student" if h % 100 < 45 else "Working Professional"
 
 
+def _alpha_call_for_user(world: WorldState, user_mu: float, rng: random.Random):
+    """Return a recent high-Gyaani call to shadow, or None.
+
+    Only lower-Gyaani users (mu below threshold) follow alpha calls; high-mu
+    users move the cohort, they don't chase it.
+    """
+    if user_mu >= 1700:
+        return None
+    fresh = [a for a in world.recent_alpha_calls if a["until"] > world.sim_now]
+    world.recent_alpha_calls = fresh  # gc stale entries
+    if not fresh:
+        return None
+    return rng.choice(fresh)
+
+
 def _ticker_for_user(
     rng: random.Random,
     world: WorldState,
     user_id: str,
     occupation: Optional[str],
+    user_mu: float = 1500.0,
 ) -> tuple[str, str]:
     """Pick a ticker for a user, returning (symbol, reason).
 
-    Decision order, each gate consuming a fixed probability mass:
-      1. 25% loss-aversion / double-down: re-call a ticker the user has
-         already lost on at least twice (only kicks in after enough history).
-      2. 15% FOMO on a recent news cascade ticker (only if the cascade is
-         still within its 2-sim-hour echo window).
-      3. 50% watchlist concentration: pick from the user's top-5 historical
-         tickers (only after they've made 4+ calls).
-      4. 7% sector-affinity by occupation (the only behavior available to
-         first-tick users with no history yet).
-      5. 3% wildcard uniform pick across the full symbol list.
+    Decision tree (each branch consumes a fixed probability mass):
+      18%  social proof: low-mu users shadow recent high-Gyaani calls.
+      18%  loss aversion / double-down: re-call a ticker the user lost on.
+      33%  FOMO follow-on: pick the recent news cascade ticker (within 2h).
+      45%  anchor on first call: re-pick the user's first-ever ticker.
+      78%  watchlist concentration: pick from top-5 historical tickers.
+      95%  sector affinity (synthetic occupation if NULL).
+      5%   wildcard uniform across the full symbol list.
+
+    Higher-priority branches (lower r threshold) take precedence; users
+    without the qualifying history fall through to the next gate.
     """
     s = world.user_state.get(user_id) or {}
     history = s.get("ticker_history", {})
     loss_tickers = s.get("loss_tickers", {})
+    anchor = s.get("anchor_ticker")
     r = rng.random()
-    # Compose gates so users with no history fall through to sector affinity
-    # rather than to pure uniform. Thresholds tuned for fast convergence in a
-    # demo session (a few hundred ticks, not a full warehouse rebuild).
-    if r < 0.20 and any(c >= 1 for c in loss_tickers.values()):
+
+    if r < 0.18:
+        alpha = _alpha_call_for_user(world, user_mu, rng)
+        if alpha is not None:
+            return alpha["symbol"], "social_proof"
+    if r < 0.18 and any(c >= 1 for c in loss_tickers.values()):
         losers = [t for t, c in loss_tickers.items() if c >= 1]
         return rng.choice(losers), "loss_aversion"
-    if r < 0.35 and world.recent_cascade is not None and world.recent_cascade["until"] > world.sim_now:
+    if r < 0.33 and world.recent_cascade is not None and world.recent_cascade["until"] > world.sim_now:
         return world.recent_cascade["symbol"], "fomo_followon"
-    if r < 0.80 and sum(history.values()) >= 2:
+    if r < 0.45 and anchor and sum(history.values()) >= 3:
+        return anchor, "anchor"
+    if r < 0.78 and sum(history.values()) >= 2:
         wl = _watchlist_for_user(world, user_id)
         if wl:
             return rng.choice(wl), "watchlist"
@@ -418,9 +472,22 @@ def tick(world: WorldState, *, advance_minutes: int = 60) -> dict:
         base_target = rng_pred.randint(3, min(15, len(candidates) or 1))
         n_pred_target = max(1, min(len(candidates), int(round(base_target * activity))))
 
-        for user_id, true_skill, occupation in candidates[:n_pred_target]:
+        # Leaderboard sprint: on Friday-afternoon close, the top quartile of
+        # users by latent skill push out a second call this tick to defend
+        # their rank before the weekly cutoff.
+        sprint = _is_leaderboard_sprint(world.sim_now)
+        sprint_set = set()
+        if sprint and candidates:
+            ranked = sorted(candidates, key=lambda c: float(c[1] or 0.0), reverse=True)
+            sprint_set = {row[0] for row in ranked[: max(1, len(ranked) // 4)]}
+            _log_event(con, world, "leaderboard_sprint", actor="market",
+                       payload=dict(top_quartile=len(sprint_set), hour=world.sim_now.hour),
+                       lens="growth")
+
+        def _emit_call(user_id: str, true_skill: float, occupation: Optional[str], is_sprint_bonus: bool = False) -> None:
             ts = float(true_skill or 0.0)
-            symbol, pick_reason = _ticker_for_user(rng_pred, world, user_id, occupation)
+            user_mu = 1500.0 + (ts * 100.0)  # synthetic mu from true_skill
+            symbol, pick_reason = _ticker_for_user(rng_pred, world, user_id, occupation, user_mu=user_mu)
             recent_losses = _recent_losses(world, user_id)
             direction = _direction_for_user(rng_pred, symbol, recent_losses)
             stars = _calibrated_stars(rng_pred, ts, world, user_id)
@@ -435,6 +502,9 @@ def tick(world: WorldState, *, advance_minutes: int = 60) -> dict:
                 [pred_id, user_id, symbol, direction, stars, made_at],
             )
             _record_call(world, user_id, symbol)
+            # High-Gyaani calls become alpha calls that lower-mu users can shadow.
+            if user_mu >= 1700:
+                _record_alpha_call(world, symbol, direction)
             counters["predictions"] += 1
             payload = dict(
                 symbol=symbol, direction=direction, stars=stars,
@@ -445,10 +515,22 @@ def tick(world: WorldState, *, advance_minutes: int = 60) -> dict:
                 payload["pre_ipo"] = True
             if recent_losses >= 2:
                 payload["tilt"] = f"revenge_after_{recent_losses}_losses"
+            if is_sprint_bonus:
+                payload["sprint"] = True
+            if user_mu >= 1700:
+                payload["alpha"] = True
             _log_event(con, world, "prediction_made",
                        actor=user_id,
                        payload=payload,
                        lens="product")
+
+        for user_id, true_skill, occupation in candidates[:n_pred_target]:
+            _emit_call(user_id, true_skill, occupation)
+        # Sprint bonus: each top-quartile user emits an additional call.
+        if sprint_set:
+            for user_id, true_skill, occupation in candidates:
+                if user_id in sprint_set:
+                    _emit_call(user_id, true_skill, occupation, is_sprint_bonus=True)
 
         # ---- 2b. Sentiment cascade. Periodically a news event clusters
         # ~6-10 calls on a single ticker within the same tick. Visible in

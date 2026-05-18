@@ -13,6 +13,8 @@ export default function OverviewPage() {
   const [preIpo, setPreIpo] = useState<MetricResult | null>(null);
   const [concentration, setConcentration] = useState<MetricResult | null>(null);
   const [cascadeLift, setCascadeLift] = useState<MetricResult | null>(null);
+  const [influence, setInfluence] = useState<MetricResult | null>(null);
+  const [reasons, setReasons] = useState<{ reason: string; n: number }[]>([]);
 
   useEffect(() => {
     sim.kpis().then(setKpis).catch(() => {});
@@ -22,6 +24,8 @@ export default function OverviewPage() {
     metrics.invoke("pre_ipo_call_interest", { week_of: "2024-W01" }).then(setPreIpo).catch(() => {});
     metrics.invoke("behavioral_concentration_index", { week_of: "2024-W01" }).then(setConcentration).catch(() => {});
     metrics.invoke("cascade_followon_lift", { week_of: "2024-W01" }).then(setCascadeLift).catch(() => {});
+    metrics.invoke("gyaani_influence_index", { week_of: "2024-W01" }).then(setInfluence).catch(() => {});
+    sim.reasons().then(setReasons).catch(() => {});
   }, []);
 
   return (
@@ -114,7 +118,7 @@ export default function OverviewPage() {
 
       <div className="mb-5">
         <div className="text-xs font-medium tracking-widest text-[var(--muted-foreground)] uppercase mb-3">Consumer behavior</div>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-3 gap-4 mb-4">
           <ProductCard
             title="Behavioral concentration"
             valueText={concentration ? concentration.value.toFixed(2) : ""}
@@ -135,7 +139,17 @@ export default function OverviewPage() {
             badge={cascadeLift && cascadeLift.value > 1.5 ? "strong follow-on" : cascadeLift && cascadeLift.value > 1 ? "mild follow-on" : null}
             tone="info"
           />
+          <ProductCard
+            title="Gyaani influence"
+            valueText={influence ? `${(influence.value * 100).toFixed(1)}%` : ""}
+            subtitle={influence ? `${influence.sample_n} calls in window` : "no sim data yet"}
+            hint={METRICS.gyaani_influence_index.long || METRICS.gyaani_influence_index.short}
+            body={influence?.interpretation || "Share of recent calls placed via social-proof shadowing of high-Gyaani users."}
+            badge={influence && influence.value > 0.05 ? "leaders moving cohort" : influence && influence.value > 0 ? "modest shadow" : null}
+            tone="info"
+          />
         </div>
+        <BehaviorFingerprint reasons={reasons} />
       </div>
 
       <Card>
@@ -145,6 +159,76 @@ export default function OverviewPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+const REASON_LABELS: Record<string, string> = {
+  sector_affinity: "Sector affinity (occupation bias)",
+  watchlist: "Watchlist (returns to top-5)",
+  fomo_followon: "FOMO follow-on (cascade echo)",
+  social_proof: "Social proof (shadowing Gyaani leaders)",
+  anchor: "Anchor (back to first call)",
+  loss_aversion: "Loss aversion (revenge re-call)",
+  wildcard: "Wildcard (uniform pick)",
+  unknown: "Unattributed",
+};
+
+const REASON_COLORS: Record<string, string> = {
+  sector_affinity: "bg-[var(--primary)]",
+  watchlist: "bg-emerald-500/80",
+  fomo_followon: "bg-amber-500/80",
+  social_proof: "bg-fuchsia-500/80",
+  anchor: "bg-cyan-500/80",
+  loss_aversion: "bg-red-500/80",
+  wildcard: "bg-[var(--muted-foreground)]/60",
+  unknown: "bg-[var(--muted-foreground)]/30",
+};
+
+function BehaviorFingerprint({ reasons }: { reasons: { reason: string; n: number }[] }) {
+  const total = reasons.reduce((acc, r) => acc + r.n, 0);
+  if (total === 0) {
+    return (
+      <Card>
+        <CardHeader><CardTitle className="text-sm font-medium">Behavior fingerprint</CardTitle></CardHeader>
+        <CardContent>
+          <div className="text-xs text-[var(--muted-foreground)] py-4 text-center">
+            Tick the world (head to /) to populate the call-reason distribution.
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-sm font-medium">
+          Behavior fingerprint
+          <HintIcon content={"Distribution of WHY each call was placed. Each call's reason is set by sim.world._ticker_for_user and stored in the prediction_made payload. Read this as the shape of the cohort's habits."} />
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-2">
+          {reasons.map((r) => {
+            const pct = (r.n / total) * 100;
+            return (
+              <div key={r.reason} className="text-xs">
+                <div className="flex justify-between mb-1">
+                  <span>{REASON_LABELS[r.reason] || r.reason}</span>
+                  <span className="text-[var(--muted-foreground)] mono">{r.n} · {pct.toFixed(1)}%</span>
+                </div>
+                <div className="h-2 bg-[var(--muted)] rounded overflow-hidden">
+                  <div
+                    className={`h-full ${REASON_COLORS[r.reason] || "bg-[var(--muted-foreground)]/40"}`}
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div className="mt-3 text-[11px] text-[var(--muted-foreground)] mono">total: {total.toLocaleString()} calls</div>
+      </CardContent>
+    </Card>
   );
 }
 

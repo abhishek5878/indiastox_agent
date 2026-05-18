@@ -43,6 +43,7 @@ from metrics.definitions import (
     pre_ipo_call_interest as _pre_ipo_call_interest,
     behavioral_concentration_index as _behavioral_concentration_index,
     cascade_followon_lift as _cascade_followon_lift,
+    gyaani_influence_index as _gyaani_influence_index,
 )
 from metrics.skill import get_skill_distribution as _get_skill_distribution
 
@@ -138,6 +139,11 @@ def cascade_followon_lift(week_of: str = "2024-W01") -> MetricResult:
     return _cascade_followon_lift(week_of)
 
 
+@tool_result
+def gyaani_influence_index(week_of: str = "2024-W01") -> MetricResult:
+    return _gyaani_influence_index(week_of)
+
+
 TOOLS: dict[str, Callable[..., MetricResult]] = {
     "weekly_active_posters": weekly_active_posters,
     "time_to_first_action": time_to_first_action,
@@ -156,6 +162,7 @@ TOOLS: dict[str, Callable[..., MetricResult]] = {
     "pre_ipo_call_interest": pre_ipo_call_interest,
     "behavioral_concentration_index": behavioral_concentration_index,
     "cascade_followon_lift": cascade_followon_lift,
+    "gyaani_influence_index": gyaani_influence_index,
 }
 
 

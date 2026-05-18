@@ -25,6 +25,7 @@ export const sim = {
       `/api/sim/events?limit=${limit}${lens && lens !== "all" ? `&lens=${lens}` : ""}`,
     ),
   kpis: () => j<Kpis>("/api/sim/kpis"),
+  reasons: () => j<{ reason: string; n: number }[]>("/api/sim/reasons"),
 };
 
 // --- Metrics ---

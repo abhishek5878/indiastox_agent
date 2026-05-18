@@ -46,6 +46,7 @@ DEFS = {
     "pre_ipo_call_interest": "1.0.0",
     "behavioral_concentration_index": "1.0.0",
     "cascade_followon_lift": "1.0.0",
+    "gyaani_influence_index": "1.0.0",
 }
 
 # Product surface markers. The Pre-IPO ticker tray is a feature on the
@@ -1594,4 +1595,105 @@ def cascade_followon_lift(week_of: str = "2024-W01") -> MetricResult:
         computation_sql=sql_cascades.strip(),
         as_of=_now(),
         breakdowns=dict(cascades=per_cascade[:10]),
+    )
+
+
+# ---------------------------------------------------------------------------
+# 18. gyaani_influence_index. How much do top-Gyaani users move the cohort?
+# ---------------------------------------------------------------------------
+
+@versioned("1.0.0")
+def gyaani_influence_index(week_of: str = "2024-W01") -> MetricResult:
+    """Share of recent calls placed via social-proof shadowing of high-Gyaani users.
+
+    Reads the `reason` field on `prediction_made` sim_events. Counts the share
+    that came in via the social_proof branch (low-mu users shadowing an
+    alpha-flagged call within the 60-minute shadow window) over the last 7
+    sim-days. High value means the cohort follows its leaders; low means
+    leaders fire alpha calls into the void.
+    """
+    sql_window = """
+        SELECT MAX(sim_ts) FROM sim_events WHERE kind = 'prediction_made'
+    """
+    con = _connect()
+    try:
+        latest = con.execute(sql_window).fetchone()[0]
+    finally:
+        con.close()
+    if latest is None:
+        return MetricResult(
+            metric_name="gyaani_influence_index",
+            value=0.0,
+            confidence=0.0,
+            sample_n=0,
+            provenance=["no_sim_calls_yet"],
+            window_open=True,
+            interpretation="No sim calls in the warehouse yet. Tick the world to populate.",
+            trace=[
+                "gyaani_influence_index = 0.0 because no sim_events of kind prediction_made exist.",
+                "the metric requires sim activity by construction.",
+                "confidence = 0.00 because sample size is zero.",
+            ],
+            definition_version=DEFS["gyaani_influence_index"],
+            computation_sql=sql_window.strip(),
+            as_of=_now(),
+            breakdowns={},
+        )
+    cutoff = latest - timedelta(days=7)
+    sql_breakdown = """
+        SELECT
+          json_extract_string(payload, '$.reason') AS reason,
+          json_extract_string(payload, '$.symbol') AS symbol,
+          COUNT(*) AS n
+        FROM sim_events
+        WHERE kind = 'prediction_made' AND sim_ts >= ?
+        GROUP BY 1, 2
+    """
+    con = _connect()
+    try:
+        rows = con.execute(sql_breakdown, [cutoff]).fetchall()
+    finally:
+        con.close()
+    total = sum(int(r[2]) for r in rows)
+    social = sum(int(r[2]) for r in rows if r[0] == "social_proof")
+    by_symbol = {}
+    for reason, sym, n in rows:
+        if reason == "social_proof" and sym:
+            by_symbol[sym] = by_symbol.get(sym, 0) + int(n)
+    share = (social / total) if total else 0.0
+    confidence = min(0.95, 0.3 + 0.001 * total)
+    top_shadowed = sorted(by_symbol.items(), key=lambda kv: -kv[1])[:3]
+    interp = (
+        f"{social}/{total} ({share:.1%}) of the last 7 sim-days of calls came in via "
+        f"social-proof shadowing of high-Gyaani users. "
+        f"Most-shadowed tickers: "
+        f"{', '.join(f'{s} ({n})' for s, n in top_shadowed) or '(none yet)'}. "
+        f"Treat as upper-bound on leader influence; an alpha call lasts 60 sim-min."
+    )
+    trace = [
+        f"gyaani_influence_index = {share:.4f} because {social} of {total} prediction_made events in the last 7 sim-days carry reason='social_proof'.",
+        f"the top-shadowed symbol is {top_shadowed[0][0] if top_shadowed else 'none'} with {top_shadowed[0][1] if top_shadowed else 0} shadow calls.",
+        f"confidence = {confidence:.2f} because the share is deterministic given the events but ramps to 0.95 only when the cohort has thousands of calls.",
+    ]
+    return MetricResult(
+        metric_name="gyaani_influence_index",
+        value=float(share),
+        confidence=float(confidence),
+        sample_n=total,
+        provenance=[
+            f"total_calls:{total}",
+            f"social_proof_calls:{social}",
+            "window:7d_rolling_from_latest_sim_event",
+        ],
+        window_open=False,
+        interpretation=interp,
+        trace=trace,
+        definition_version=DEFS["gyaani_influence_index"],
+        computation_sql=sql_breakdown.strip(),
+        as_of=_now(),
+        breakdowns=dict(
+            social_proof=social,
+            total=total,
+            top_shadowed=dict(top_shadowed),
+        ),
     )

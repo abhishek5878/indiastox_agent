@@ -102,6 +102,11 @@ export const METRICS: Record<string, GlossaryEntry> = {
     short: "Post-cascade call rate vs baseline on the same ticker.",
     long: "For every `news_cascade` event in the last 7 sim-days, measures the 2-hour post-window call count on the cascade ticker vs that ticker's rolling baseline rate. Lift > 1.0 means organic FOMO follow-on. A real signal that cascades create herd behavior beyond just the directly-affected users.",
   },
+  gyaani_influence_index: {
+    label: "Gyaani influence",
+    short: "Share of calls placed via social-proof shadowing of top-Gyaani users.",
+    long: "When a user with mu >= 1700 makes a call, lower-mu users have a 60-minute window in which they may shadow that call. This metric is the rolling share of calls placed via that branch over the last 7 sim-days. High value = the cohort follows its leaders. Treat as an upper bound; an alpha-call window closes after 60 sim-minutes.",
+  },
 };
 
 export const TERMS: Record<string, GlossaryEntry> = {

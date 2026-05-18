@@ -121,6 +121,37 @@ def events(
     ]
 
 
+@router.get("/reasons")
+def reasons():
+    """Return the pick-reason distribution across all sim prediction_made events.
+
+    Each call's payload carries a `reason` field set by sim.world._ticker_for_user.
+    The chart on /overview reads this directly. Shape:
+      [{"reason": "sector_affinity", "n": 655}, ...]
+    """
+    if not WAREHOUSE.exists():
+        return []
+    con = duckdb.connect(str(WAREHOUSE), read_only=False)
+    try:
+        con.execute(
+            """CREATE TABLE IF NOT EXISTS sim_events (
+                 event_id TEXT PRIMARY KEY, sim_ts TIMESTAMP NOT NULL,
+                 wall_ts TIMESTAMP NOT NULL, kind TEXT NOT NULL,
+                 actor TEXT, payload JSON, lens TEXT
+               )"""
+        )
+        rows = con.execute(
+            """SELECT COALESCE(json_extract_string(payload, '$.reason'), 'unknown') AS reason,
+                      COUNT(*) AS n
+               FROM sim_events
+               WHERE kind = 'prediction_made'
+               GROUP BY 1 ORDER BY 2 DESC"""
+        ).fetchall()
+    finally:
+        con.close()
+    return [dict(reason=r[0], n=int(r[1])) for r in rows]
+
+
 @router.get("/kpis")
 def kpis():
     """Lens-relevant KPI bundle, all in one round-trip."""
