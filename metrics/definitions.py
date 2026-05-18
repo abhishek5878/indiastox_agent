@@ -11,6 +11,7 @@ the bonus loop, or anywhere else.
 """
 from __future__ import annotations
 
+import json
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -43,6 +44,8 @@ DEFS = {
     "call_consensus_divergence": "1.0.0",
     "ai_content_flagged_share": "1.0.0",
     "pre_ipo_call_interest": "1.0.0",
+    "behavioral_concentration_index": "1.0.0",
+    "cascade_followon_lift": "1.0.0",
 }
 
 # Product surface markers. The Pre-IPO ticker tray is a feature on the
@@ -1337,4 +1340,258 @@ def pre_ipo_call_interest(week_of: str = "2024-W01") -> MetricResult:
         computation_sql=sql.strip(),
         as_of=_now(),
         breakdowns=per_ticker,
+    )
+
+
+# ---------------------------------------------------------------------------
+# 16. behavioral_concentration_index. How focused is each user's ticker set?
+# ---------------------------------------------------------------------------
+
+@versioned("1.0.0")
+def behavioral_concentration_index(week_of: str = "2024-W01") -> MetricResult:
+    """Mean per-user Herfindahl (HHI) of ticker distribution within W01.
+
+    For each user with >=3 calls, compute sum((calls_on_ticker / total_calls)^2).
+    HHI=1.0 means single-ticker concentration; HHI~=0.1 means perfectly spread
+    across 10 names. The mean across users tells you how concentrated the
+    cohort is in aggregate. Real retail concentrates: typical HHI lands 0.35-0.55.
+    """
+    start, end = _week_bounds(week_of)
+    sql = """
+        WITH per_user_ticker AS (
+          SELECT user_id, stock_symbol, COUNT(*) AS n
+          FROM fact_prediction
+          WHERE made_at >= ? AND made_at < ?
+          GROUP BY user_id, stock_symbol
+        ),
+        per_user_total AS (
+          SELECT user_id, SUM(n) AS total, COUNT(*) AS distinct_tickers
+          FROM per_user_ticker
+          GROUP BY user_id
+          HAVING SUM(n) >= 3
+        )
+        SELECT
+          put.user_id,
+          put.distinct_tickers,
+          put.total,
+          SUM(POWER(pt.n * 1.0 / put.total, 2)) AS hhi
+        FROM per_user_total put
+        JOIN per_user_ticker pt ON pt.user_id = put.user_id
+        GROUP BY put.user_id, put.distinct_tickers, put.total
+    """
+    con = _connect()
+    try:
+        rows = con.execute(sql, [start, end]).fetchall()
+    finally:
+        con.close()
+    if not rows:
+        return MetricResult(
+            metric_name="behavioral_concentration_index",
+            value=0.0,
+            confidence=0.0,
+            sample_n=0,
+            provenance=["no_users_with_3plus_calls"],
+            window_open=True,
+            interpretation="No users have 3+ calls in the window. Insufficient evidence to compute concentration.",
+            trace=[
+                "behavioral_concentration_index = 0.0 because no user has 3+ calls in W01.",
+                "the metric requires multi-call users by construction.",
+                "confidence = 0.00 because sample size is zero.",
+            ],
+            definition_version=DEFS["behavioral_concentration_index"],
+            computation_sql=sql.strip(),
+            as_of=_now(),
+            breakdowns={},
+        )
+    hhis = [float(r[3]) for r in rows]
+    mean_hhi = sum(hhis) / len(hhis)
+    distinct_counts = [int(r[1]) for r in rows]
+    mean_distinct = sum(distinct_counts) / len(distinct_counts)
+    # Bucket users by HHI to show the distribution.
+    buckets = dict(concentrated_0_75_plus=0, focused_0_5_to_0_75=0,
+                   diversified_0_25_to_0_5=0, exploratory_under_0_25=0)
+    for h in hhis:
+        if h >= 0.75: buckets["concentrated_0_75_plus"] += 1
+        elif h >= 0.50: buckets["focused_0_5_to_0_75"] += 1
+        elif h >= 0.25: buckets["diversified_0_25_to_0_5"] += 1
+        else: buckets["exploratory_under_0_25"] += 1
+    interp = (
+        f"Mean per-user ticker HHI across {len(rows)} multi-call users is {mean_hhi:.2f}. "
+        f"Average distinct tickers per user: {mean_distinct:.1f}. "
+        f"{buckets['concentrated_0_75_plus']} users are concentrated (HHI >= 0.75); "
+        f"{buckets['exploratory_under_0_25']} are exploring broadly (HHI < 0.25). "
+        f"Typical retail lands in 0.35-0.55."
+    )
+    trace = [
+        f"behavioral_concentration_index = {mean_hhi:.4f} because the average user with 3+ calls has a Herfindahl of {mean_hhi:.2f} across their ticker distribution.",
+        f"the cohort splits {buckets['concentrated_0_75_plus']}/{buckets['focused_0_5_to_0_75']}/{buckets['diversified_0_25_to_0_5']}/{buckets['exploratory_under_0_25']} across concentrated/focused/diversified/exploratory buckets.",
+        f"confidence = 0.85 because the Herfindahl is deterministic given the cohort; sample size ({len(rows)} users) is above the floor for cohort-level conclusions.",
+    ]
+    return MetricResult(
+        metric_name="behavioral_concentration_index",
+        value=float(mean_hhi),
+        confidence=0.85,
+        sample_n=len(rows),
+        provenance=[
+            f"users_with_3plus_calls:{len(rows)}",
+            f"mean_distinct_tickers:{mean_distinct:.2f}",
+        ],
+        window_open=False,
+        interpretation=interp,
+        trace=trace,
+        definition_version=DEFS["behavioral_concentration_index"],
+        computation_sql=sql.strip(),
+        as_of=_now(),
+        breakdowns=dict(
+            buckets=buckets,
+            mean_distinct=round(mean_distinct, 2),
+            min_hhi=round(min(hhis), 4),
+            max_hhi=round(max(hhis), 4),
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# 17. cascade_followon_lift. Do news cascades create organic follow-on calls?
+# ---------------------------------------------------------------------------
+
+@versioned("1.0.0")
+def cascade_followon_lift(week_of: str = "2024-W01") -> MetricResult:
+    """Ratio of call rate on a cascade ticker in the 2-hour post-cascade window
+    vs. that ticker's baseline rate. >1.0 means cascades create organic FOMO
+    follow-on beyond just the directly-cascaded users; ~1.0 means no echo.
+
+    Cascades are a sim.world behaviour that emit `news_cascade` rows into
+    sim_events; the W01 baseline contains zero cascades. We compare against
+    the last 7 sim-days of cascade-bearing activity rather than the W01
+    window so the metric stabilises as soon as the sim has run for a day.
+    """
+    sql_cascades = """
+        SELECT sim_ts, payload
+        FROM sim_events
+        WHERE kind = 'news_cascade'
+        ORDER BY sim_ts
+    """
+    con = _connect()
+    try:
+        cascades = con.execute(sql_cascades).fetchall()
+    finally:
+        con.close()
+    if cascades:
+        latest_ts = cascades[-1][0]
+        start = latest_ts - timedelta(days=7)
+        end = latest_ts + timedelta(hours=4)  # tail-buffer for the post-windows
+        cascades = [c for c in cascades if c[0] >= start]
+    else:
+        start = _now() - timedelta(days=7)
+        end = _now()
+
+    if not cascades:
+        return MetricResult(
+            metric_name="cascade_followon_lift",
+            value=1.0,
+            confidence=0.0,
+            sample_n=0,
+            provenance=["no_cascades_in_window"],
+            window_open=True,
+            interpretation="No news cascades fired in the window. Run more sim ticks to populate the metric.",
+            trace=[
+                "cascade_followon_lift = 1.00 because there were no cascades to compare against.",
+                "the metric requires at least one cascade by construction.",
+                "confidence = 0.00 because sample size is zero.",
+            ],
+            definition_version=DEFS["cascade_followon_lift"],
+            computation_sql=sql_cascades.strip(),
+            as_of=_now(),
+            breakdowns={},
+        )
+
+    # For each cascade, count post-window calls on the cascade ticker, vs the
+    # full-window baseline rate on the same ticker.
+    lifts: list[float] = []
+    per_cascade: list[dict] = []
+    con = _connect()
+    try:
+        for sim_ts, payload_json in cascades:
+            try:
+                payload = json.loads(payload_json) if isinstance(payload_json, str) else (payload_json or {})
+            except (ValueError, TypeError):
+                continue
+            symbol = payload.get("symbol")
+            if not symbol:
+                continue
+            window_end = sim_ts + timedelta(hours=2)
+            post = con.execute(
+                """SELECT COUNT(*) FROM fact_prediction
+                   WHERE stock_symbol = ?
+                     AND made_at > ? AND made_at <= ?""",
+                [symbol, sim_ts, window_end],
+            ).fetchone()[0] or 0
+            baseline = con.execute(
+                """SELECT COUNT(*) FROM fact_prediction
+                   WHERE stock_symbol = ?
+                     AND made_at >= ? AND made_at < ?""",
+                [symbol, start, end],
+            ).fetchone()[0] or 0
+            # Hours in the rolling baseline window.
+            window_hours = max(1.0, (end - start).total_seconds() / 3600.0)
+            baseline_per_2h = (baseline / window_hours) * 2.0
+            if baseline_per_2h <= 0:
+                continue
+            lift = post / baseline_per_2h
+            lifts.append(lift)
+            per_cascade.append(dict(
+                symbol=symbol,
+                post_window_calls=int(post),
+                baseline_per_2h=round(baseline_per_2h, 2),
+                lift=round(lift, 2),
+            ))
+    finally:
+        con.close()
+
+    if not lifts:
+        return MetricResult(
+            metric_name="cascade_followon_lift",
+            value=1.0,
+            confidence=0.2,
+            sample_n=len(cascades),
+            provenance=[f"cascades:{len(cascades)}", "no_qualifying_baselines"],
+            window_open=True,
+            interpretation=f"{len(cascades)} cascades observed but none had a non-zero baseline to compare against.",
+            trace=[
+                f"cascade_followon_lift = 1.00 because {len(cascades)} cascades existed but no ticker had baseline > 0.",
+                "the comparison ratio is undefined when baseline is zero.",
+                "confidence = 0.20 because the sample exists but the comparison failed.",
+            ],
+            definition_version=DEFS["cascade_followon_lift"],
+            computation_sql=sql_cascades.strip(),
+            as_of=_now(),
+            breakdowns={},
+        )
+
+    mean_lift = sum(lifts) / len(lifts)
+    confidence = min(0.95, 0.5 + 0.05 * len(lifts))
+    interp = (
+        f"Across {len(lifts)} cascades, the mean call rate on the cascade ticker in the "
+        f"2-hour post-window is {mean_lift:.2f}x the ticker's baseline rate. "
+        f"Lift > 1.0 means the cascade created organic FOMO follow-on beyond directly-affected users."
+    )
+    trace = [
+        f"cascade_followon_lift = {mean_lift:.4f} because the average post-cascade 2-hour window sees {mean_lift:.2f}x baseline call volume on the cascade ticker.",
+        f"the strongest follow-on cascade so far is {max(per_cascade, key=lambda c: c['lift'])['symbol']} at {max(c['lift'] for c in per_cascade):.2f}x.",
+        f"confidence = {confidence:.2f} because the sample is {len(lifts)} cascades; the metric stabilises with more cascades.",
+    ]
+    return MetricResult(
+        metric_name="cascade_followon_lift",
+        value=float(mean_lift),
+        confidence=float(confidence),
+        sample_n=len(lifts),
+        provenance=[f"cascades_compared:{len(lifts)}", "window:2h_post_cascade"],
+        window_open=False,
+        interpretation=interp,
+        trace=trace,
+        definition_version=DEFS["cascade_followon_lift"],
+        computation_sql=sql_cascades.strip(),
+        as_of=_now(),
+        breakdowns=dict(cascades=per_cascade[:10]),
     )

@@ -41,6 +41,8 @@ from metrics.definitions import (
     call_consensus_divergence as _call_consensus_divergence,
     ai_content_flagged_share as _ai_content_flagged_share,
     pre_ipo_call_interest as _pre_ipo_call_interest,
+    behavioral_concentration_index as _behavioral_concentration_index,
+    cascade_followon_lift as _cascade_followon_lift,
 )
 from metrics.skill import get_skill_distribution as _get_skill_distribution
 
@@ -126,6 +128,16 @@ def pre_ipo_call_interest(week_of: str = "2024-W01") -> MetricResult:
     return _pre_ipo_call_interest(week_of)
 
 
+@tool_result
+def behavioral_concentration_index(week_of: str = "2024-W01") -> MetricResult:
+    return _behavioral_concentration_index(week_of)
+
+
+@tool_result
+def cascade_followon_lift(week_of: str = "2024-W01") -> MetricResult:
+    return _cascade_followon_lift(week_of)
+
+
 TOOLS: dict[str, Callable[..., MetricResult]] = {
     "weekly_active_posters": weekly_active_posters,
     "time_to_first_action": time_to_first_action,
@@ -142,6 +154,8 @@ TOOLS: dict[str, Callable[..., MetricResult]] = {
     "call_consensus_divergence": call_consensus_divergence,
     "ai_content_flagged_share": ai_content_flagged_share,
     "pre_ipo_call_interest": pre_ipo_call_interest,
+    "behavioral_concentration_index": behavioral_concentration_index,
+    "cascade_followon_lift": cascade_followon_lift,
 }
 
 

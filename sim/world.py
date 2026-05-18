@@ -80,9 +80,19 @@ class WorldState:
     tick_count: int = 0
     last_growth_check_ghost: Optional[float] = None
     last_growth_check_at: Optional[datetime] = None
-    # Behavior state: per-user tilt/cooldown so streaks affect call rate.
-    # Keys are user_id; values are {"streak": [WIN|LOSS|...], "cooldown_until": datetime}.
+    # Behavior state per user. Schema:
+    #   {
+    #     "streak": [WIN|LOSS|DRAW, ...],            (last 5)
+    #     "cooldown_until": datetime|None,
+    #     "ticker_history": {symbol: count},          (lifetime per-user)
+    #     "loss_tickers": {symbol: loss_count},       (where they got burned)
+    #     "stars_offset": int,                        (calibration drift)
+    #   }
     user_state: dict = field(default_factory=dict)
+    # Most-recent news cascade. (symbol, direction, until_ts). New calls in the
+    # ~2 sim hours after a cascade have a heightened probability of landing on
+    # the cascade ticker (FOMO follow-on).
+    recent_cascade: Optional[dict] = None
 
 
 def fresh_world() -> WorldState:
@@ -114,10 +124,13 @@ SECTOR_AFFINITY = {
 
 
 def _activity_multiplier(sim_now: datetime) -> float:
-    """Time-of-day rhythm. NSE market hours are 09:15-15:30 IST; the synthetic
-    clock is naive UTC but for the demo we read it directly as if it were the
-    user's wall-clock. Calls peak mid-session, dip at lunch, light overnight.
+    """Time-of-day + day-of-week rhythm. NSE is closed on Sat/Sun, so weekend
+    volume drops to ~5% of weekday. Within a weekday, calls peak mid-session,
+    dip at lunch, light overnight.
     """
+    # Weekend: trading is closed; engagement is residual (forum chatter only).
+    if sim_now.weekday() >= 5:  # Saturday=5, Sunday=6
+        return 0.05
     h = sim_now.hour
     if 9 <= h < 11:
         return 1.6   # opening surge
@@ -132,25 +145,102 @@ def _activity_multiplier(sim_now: datetime) -> float:
     return 0.25      # overnight
 
 
-def _ticker_for_user(rng: random.Random, occupation: Optional[str]) -> str:
-    """Pick a ticker biased by occupation, with a long tail across all symbols.
+def _watchlist_for_user(world: WorldState, user_id: str) -> list[str]:
+    """Top tickers the user has historically called, ranked by frequency.
 
-    70% chance the user calls within their preferred sector; 30% picks uniformly
-    from all listed tickers. Reproduces the "I only call what I think I know"
-    pattern that shows up in real retail data.
+    Real retail concentrates: most users develop a 3-5 ticker watchlist and
+    rarely venture outside it. This is the persisted view of that pattern.
     """
-    if rng.random() < 0.70 and occupation in SECTOR_AFFINITY:
-        sector = rng.choice(SECTOR_AFFINITY[occupation])
-        candidates = [t for t, s in SECTOR_OF.items() if s == sector]
+    hist = world.user_state.get(user_id, {}).get("ticker_history", {})
+    return sorted(hist.keys(), key=lambda t: -hist[t])[:5]
+
+
+def _record_call(world: WorldState, user_id: str, symbol: str) -> None:
+    s = world.user_state.setdefault(user_id, {
+        "streak": [], "cooldown_until": None,
+        "ticker_history": {}, "loss_tickers": {}, "stars_offset": 0,
+    })
+    s["ticker_history"][symbol] = s["ticker_history"].get(symbol, 0) + 1
+
+
+def _synthetic_occupation(user_id: str) -> str:
+    """Deterministic occupation fallback for baseline users (whose dim_user
+    row has NULL occupation). Hashes user_id to {Student, Working Professional}
+    so the sector-affinity branch still has signal to fire on."""
+    h = int(hashlib.sha256(user_id.encode()).hexdigest()[:4], 16)
+    return "Student" if h % 100 < 45 else "Working Professional"
+
+
+def _ticker_for_user(
+    rng: random.Random,
+    world: WorldState,
+    user_id: str,
+    occupation: Optional[str],
+) -> tuple[str, str]:
+    """Pick a ticker for a user, returning (symbol, reason).
+
+    Decision order, each gate consuming a fixed probability mass:
+      1. 25% loss-aversion / double-down: re-call a ticker the user has
+         already lost on at least twice (only kicks in after enough history).
+      2. 15% FOMO on a recent news cascade ticker (only if the cascade is
+         still within its 2-sim-hour echo window).
+      3. 50% watchlist concentration: pick from the user's top-5 historical
+         tickers (only after they've made 4+ calls).
+      4. 7% sector-affinity by occupation (the only behavior available to
+         first-tick users with no history yet).
+      5. 3% wildcard uniform pick across the full symbol list.
+    """
+    s = world.user_state.get(user_id) or {}
+    history = s.get("ticker_history", {})
+    loss_tickers = s.get("loss_tickers", {})
+    r = rng.random()
+    # Compose gates so users with no history fall through to sector affinity
+    # rather than to pure uniform. Thresholds tuned for fast convergence in a
+    # demo session (a few hundred ticks, not a full warehouse rebuild).
+    if r < 0.20 and any(c >= 1 for c in loss_tickers.values()):
+        losers = [t for t, c in loss_tickers.items() if c >= 1]
+        return rng.choice(losers), "loss_aversion"
+    if r < 0.35 and world.recent_cascade is not None and world.recent_cascade["until"] > world.sim_now:
+        return world.recent_cascade["symbol"], "fomo_followon"
+    if r < 0.80 and sum(history.values()) >= 2:
+        wl = _watchlist_for_user(world, user_id)
+        if wl:
+            return rng.choice(wl), "watchlist"
+    occ = occupation if occupation in SECTOR_AFFINITY else _synthetic_occupation(user_id)
+    if r < 0.95:
+        sector = rng.choice(SECTOR_AFFINITY[occ])
+        candidates = [t for t, sec in SECTOR_OF.items() if sec == sector]
         if candidates:
-            return rng.choice(candidates)
-    return rng.choice(STOCK_SYMBOLS)
+            return rng.choice(candidates), "sector_affinity"
+    return rng.choice(STOCK_SYMBOLS), "wildcard"
 
 
 def _direction_for_user(rng: random.Random, ticker: str, recent_losses: int) -> str:
     """Retail leans BULL by default; recent losers tilt further BULL (revenge)."""
     bull_p = 0.55 + (0.05 * min(recent_losses, 3))
     return "BULL" if rng.random() < bull_p else "BEAR"
+
+
+def _calibrated_stars(rng: random.Random, true_skill: float, world: WorldState, user_id: str) -> int:
+    """Confidence calibration drift. A user's stars track their recent outcome
+    pattern, not just their latent skill: a WIN bumps the next-call stars up,
+    a LOSS bumps them down. The drift is bounded so high-skill users stay
+    well-calibrated and low-skill users stay overconfident.
+    """
+    base = rng.choices([1, 2, 3, 4, 5], weights=[20, 25, 25, 20, 10], k=1)[0]
+    skill_adj = max(-2, min(2, round(true_skill * 1.0)))
+    s = world.user_state.get(user_id) or {}
+    streak = s.get("streak", [])
+    if streak:
+        last = streak[-1]
+        if last == "WIN":
+            s.setdefault("stars_offset", 0)
+            s["stars_offset"] = min(2, s["stars_offset"] + 1)
+        elif last == "LOSS":
+            s.setdefault("stars_offset", 0)
+            s["stars_offset"] = max(-2, s["stars_offset"] - 1)
+    drift = (s.get("stars_offset") or 0)
+    return max(1, min(5, base + skill_adj + drift))
 
 
 def _on_cooldown(world: WorldState, user_id: str) -> bool:
@@ -161,12 +251,18 @@ def _on_cooldown(world: WorldState, user_id: str) -> bool:
     return until is not None and until > world.sim_now
 
 
-def _record_outcome(world: WorldState, user_id: str, outcome: str) -> None:
-    """Update the per-user streak. Three consecutive LOSSes triggers a 24h
-    cooldown; mirrors the capitulation pattern in real retail behavior.
+def _record_outcome(world: WorldState, user_id: str, outcome: str, symbol: str = "") -> None:
+    """Update the per-user streak + per-ticker loss count. Three consecutive
+    LOSSes triggers a 24h cooldown; per-ticker losses feed the loss-aversion
+    /double-down pattern in `_ticker_for_user`.
     """
-    s = world.user_state.setdefault(user_id, {"streak": [], "cooldown_until": None})
-    s["streak"] = (s["streak"] + [outcome])[-5:]  # keep last 5
+    s = world.user_state.setdefault(user_id, {
+        "streak": [], "cooldown_until": None,
+        "ticker_history": {}, "loss_tickers": {}, "stars_offset": 0,
+    })
+    s["streak"] = (s["streak"] + [outcome])[-5:]
+    if outcome == "LOSS" and symbol:
+        s["loss_tickers"][symbol] = s["loss_tickers"].get(symbol, 0) + 1
     if s["streak"][-3:] == ["LOSS", "LOSS", "LOSS"]:
         s["cooldown_until"] = world.sim_now + timedelta(hours=24)
 
@@ -324,11 +420,10 @@ def tick(world: WorldState, *, advance_minutes: int = 60) -> dict:
 
         for user_id, true_skill, occupation in candidates[:n_pred_target]:
             ts = float(true_skill or 0.0)
-            stars_base = rng_pred.choices([1, 2, 3, 4, 5], weights=[20, 25, 25, 20, 10], k=1)[0]
-            stars = max(1, min(5, stars_base + max(-2, min(2, round(ts * 1.0)))))
-            symbol = _ticker_for_user(rng_pred, occupation)
+            symbol, pick_reason = _ticker_for_user(rng_pred, world, user_id, occupation)
             recent_losses = _recent_losses(world, user_id)
             direction = _direction_for_user(rng_pred, symbol, recent_losses)
+            stars = _calibrated_stars(rng_pred, ts, world, user_id)
             made_at = world.sim_now + timedelta(minutes=rng_pred.randint(0, max(1, advance_minutes - 1)))
             pred_id = str(uuid.UUID(int=rng_pred.getrandbits(128)))
             con.execute(
@@ -339,10 +434,12 @@ def tick(world: WorldState, *, advance_minutes: int = 60) -> dict:
                    VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, FALSE, 'sim.world')""",
                 [pred_id, user_id, symbol, direction, stars, made_at],
             )
+            _record_call(world, user_id, symbol)
             counters["predictions"] += 1
             payload = dict(
                 symbol=symbol, direction=direction, stars=stars,
                 true_skill=round(ts, 2), sector=SECTOR_OF.get(symbol, "other"),
+                reason=pick_reason,
             )
             if symbol in PRE_IPO_TICKERS:
                 payload["pre_ipo"] = True
@@ -373,6 +470,13 @@ def tick(world: WorldState, *, advance_minutes: int = 60) -> dict:
                                users_affected=len(cascade_users),
                            ),
                            lens="product")
+                # Record so subsequent calls within ~2 hours pick this up
+                # via the FOMO follow-on branch in `_ticker_for_user`.
+                world.recent_cascade = dict(
+                    symbol=cascade_symbol,
+                    direction=cascade_dir,
+                    until=world.sim_now + timedelta(hours=2),
+                )
                 for user_id, true_skill, _occ in cascade_users:
                     pred_id = str(uuid.UUID(int=rng_pred.getrandbits(128)))
                     made_at = world.sim_now + timedelta(minutes=rng_pred.randint(0, max(1, advance_minutes - 1)))
@@ -385,6 +489,7 @@ def tick(world: WorldState, *, advance_minutes: int = 60) -> dict:
                            VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, FALSE, 'sim.world')""",
                         [pred_id, user_id, cascade_symbol, cascade_dir, stars, made_at],
                     )
+                    _record_call(world, user_id, cascade_symbol)
                     counters["predictions"] += 1
 
         # ---- 3. Outcome resolutions ----
@@ -416,11 +521,11 @@ def tick(world: WorldState, *, advance_minutes: int = 60) -> dict:
                  resolved_at, pred_id],
             )
             counters["resolved"] += 1
-            # Track the streak. Three consecutive LOSSes triggers a 24h cooldown
-            # for that user (capitulation behavior). Emits a `user_cooled_off`
-            # event so the CS lens can pick it up.
+            # Track the streak + per-ticker losses. Three consecutive LOSSes
+            # triggers a 24h cooldown (capitulation). Per-ticker losses feed
+            # the loss-aversion / double-down branch in _ticker_for_user.
             prior = world.user_state.get(user_id, {}).get("streak", [])
-            _record_outcome(world, user_id, outcome)
+            _record_outcome(world, user_id, outcome, symbol=symbol)
             new_streak = world.user_state[user_id]["streak"]
             if new_streak[-3:] == ["LOSS", "LOSS", "LOSS"] and prior[-3:] != ["LOSS", "LOSS", "LOSS"]:
                 _log_event(con, world, "user_cooled_off", actor=user_id,

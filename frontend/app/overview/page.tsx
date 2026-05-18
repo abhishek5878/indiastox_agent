@@ -11,6 +11,8 @@ export default function OverviewPage() {
   const [divergence, setDivergence] = useState<MetricResult | null>(null);
   const [aiContent, setAiContent] = useState<MetricResult | null>(null);
   const [preIpo, setPreIpo] = useState<MetricResult | null>(null);
+  const [concentration, setConcentration] = useState<MetricResult | null>(null);
+  const [cascadeLift, setCascadeLift] = useState<MetricResult | null>(null);
 
   useEffect(() => {
     sim.kpis().then(setKpis).catch(() => {});
@@ -18,6 +20,8 @@ export default function OverviewPage() {
     metrics.invoke("call_consensus_divergence", { week_of: "2024-W01" }).then(setDivergence).catch(() => {});
     metrics.invoke("ai_content_flagged_share", {}).then(setAiContent).catch(() => {});
     metrics.invoke("pre_ipo_call_interest", { week_of: "2024-W01" }).then(setPreIpo).catch(() => {});
+    metrics.invoke("behavioral_concentration_index", { week_of: "2024-W01" }).then(setConcentration).catch(() => {});
+    metrics.invoke("cascade_followon_lift", { week_of: "2024-W01" }).then(setCascadeLift).catch(() => {});
   }, []);
 
   return (
@@ -104,6 +108,32 @@ export default function OverviewPage() {
               const top = entries.sort((a, b) => Number(b[1]) - Number(a[1]))[0];
               return `top: ${top[0]} (${top[1]} calls)`;
             })() : null}
+          />
+        </div>
+      </div>
+
+      <div className="mb-5">
+        <div className="text-xs font-medium tracking-widest text-[var(--muted-foreground)] uppercase mb-3">Consumer behavior</div>
+        <div className="grid grid-cols-2 gap-4">
+          <ProductCard
+            title="Behavioral concentration"
+            valueText={concentration ? concentration.value.toFixed(2) : ""}
+            subtitle={concentration ? `${concentration.sample_n} users, mean ${((concentration.breakdowns as any)?.mean_distinct || 0).toFixed(1)} tickers each` : "loading"}
+            hint={METRICS.behavioral_concentration_index.long || METRICS.behavioral_concentration_index.short}
+            body={concentration?.interpretation || "Mean per-user Herfindahl on ticker distribution. Typical retail lands 0.35-0.55."}
+            badge={concentration && (concentration.breakdowns as any)?.buckets ? (() => {
+              const b: any = (concentration.breakdowns as any).buckets;
+              return `${b.concentrated_0_75_plus} concentrated · ${b.exploratory_under_0_25} exploring`;
+            })() : null}
+          />
+          <ProductCard
+            title="Cascade follow-on lift"
+            valueText={cascadeLift ? `${cascadeLift.value.toFixed(2)}x` : ""}
+            subtitle={cascadeLift ? `${cascadeLift.sample_n} cascades, last 7d sim` : "no cascades yet"}
+            hint={METRICS.cascade_followon_lift.long || METRICS.cascade_followon_lift.short}
+            body={cascadeLift?.interpretation || "Ratio of post-cascade call rate to baseline on the same ticker. Lift > 1 = organic FOMO follow-on."}
+            badge={cascadeLift && cascadeLift.value > 1.5 ? "strong follow-on" : cascadeLift && cascadeLift.value > 1 ? "mild follow-on" : null}
+            tone="info"
           />
         </div>
       </div>

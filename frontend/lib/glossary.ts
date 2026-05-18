@@ -92,6 +92,16 @@ export const METRICS: Record<string, GlossaryEntry> = {
     short: "Share of W01 calls placed on Pre-IPO tray tickers.",
     long: "The Pre-IPO tray is a separate surface where outcomes resolve at the IPO event, not at T+5d. This metric tracks engagement with the tray (a leading indicator on which Pre-IPO names the cohort wants to bet on) and is a proxy for tray-positioning decisions.",
   },
+  behavioral_concentration_index: {
+    label: "Behavioral concentration",
+    short: "Mean per-user Herfindahl on ticker distribution.",
+    long: "For each user with 3+ calls, sum((calls_on_ticker / total_calls)^2). HHI=1.0 means single-ticker concentration; ~0.1 means perfectly diversified across 10 names. Typical retail lands 0.35-0.55. The cohort distribution (concentrated / focused / diversified / exploratory) tells you whether feed-weighting should reward exploration or rein in concentration.",
+  },
+  cascade_followon_lift: {
+    label: "Cascade follow-on lift",
+    short: "Post-cascade call rate vs baseline on the same ticker.",
+    long: "For every `news_cascade` event in the last 7 sim-days, measures the 2-hour post-window call count on the cascade ticker vs that ticker's rolling baseline rate. Lift > 1.0 means organic FOMO follow-on. A real signal that cascades create herd behavior beyond just the directly-affected users.",
+  },
 };
 
 export const TERMS: Record<string, GlossaryEntry> = {
