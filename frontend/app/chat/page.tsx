@@ -118,7 +118,7 @@ export default function ChatPage() {
         {busy && calls.length === 0 && !final && (
           <div className="mt-4 inline-flex items-center gap-2 rounded-md bg-[var(--primary)]/10 border border-[var(--primary)]/30 px-3 py-2 text-xs">
             <span className="h-1.5 w-1.5 rounded-full bg-[var(--primary)] pulse-dot" />
-            <span>Auto-demo running — watch the agent pick tools, parse confidence, and answer.</span>
+            <span>Auto-demo running. Watch the agent pick tools, parse confidence, and answer.</span>
           </div>
         )}
       </header>

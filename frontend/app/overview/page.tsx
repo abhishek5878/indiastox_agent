@@ -26,21 +26,21 @@ export default function OverviewPage() {
       <div className="grid grid-cols-4 gap-4 mb-6">
         <KpiTile
           label="Ghost rate (Unstop)"
-          value={kpis ? `${(kpis.ghost_rate_unstop.value * 100).toFixed(1)}%` : "—"}
+          value={kpis ? `${(kpis.ghost_rate_unstop.value * 100).toFixed(1)}%` : ""}
           tone={kpis && kpis.ghost_rate_unstop.value > 0.3 ? "bad" : "neutral"}
           delta={kpis ? `confidence ${kpis.ghost_rate_unstop.confidence.toFixed(2)}` : undefined}
         />
         <KpiTile
           label="Dark fraction"
-          value={kpis ? `${(kpis.dark_fraction.value * 100).toFixed(1)}%` : "—"}
+          value={kpis ? `${(kpis.dark_fraction.value * 100).toFixed(1)}%` : ""}
         />
         <KpiTile
           label="Latest eval"
-          value={evalRun ? `${evalRun.total_score} / ${evalRun.max_total}` : "—"}
+          value={evalRun ? `${evalRun.total_score} / ${evalRun.max_total}` : ""}
         />
         <KpiTile
           label="Personas resolved"
-          value={kpis ? (2000 + kpis.sim_personas_new).toLocaleString() : "—"}
+          value={kpis ? (2000 + kpis.sim_personas_new).toLocaleString() : ""}
           hint="baseline + sim joiners"
         />
       </div>
@@ -61,7 +61,7 @@ export default function OverviewPage() {
       </div>
 
       <Card>
-        <CardHeader><CardTitle>Dashboard mosaic — four panels, live</CardTitle></CardHeader>
+        <CardHeader><CardTitle>Dashboard mosaic. Four panels, live</CardTitle></CardHeader>
         <CardContent>
           <img src={llm.asset("dashboard_mosaic.png")} alt="mosaic" className="rounded-md w-full" />
         </CardContent>

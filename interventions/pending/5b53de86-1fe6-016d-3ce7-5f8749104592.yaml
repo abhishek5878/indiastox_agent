@@ -1,11 +1,11 @@
 user_id: 5b53de86-1fe6-016d-3ce7-5f8749104592
 risk_score: 6.681565451793232
-intervention_text: "Your BULL on RELIANCE closed the other way \u2014 normal at this\
-  \ sample size, but the next 3 calls will move your rating more than this one did.\
-  \ 2 calls this week, none of the resolved ones landed. At phi 214.9 that's still\
-  \ noise \u2014 your priors haven't been challenged yet. Step outside RELIANCE (energy):\
-  \ pick a stock from a different sector and make one BULL/BEAR call. The rating won't\
-  \ tighten until the cohort spans 2+ sectors."
+intervention_text: 'Your BULL on RELIANCE closed the other way. Normal at this sample
+  size, but the next 3 calls will move your rating more than this one did. 2 calls
+  this week, none of the resolved ones landed. At phi 214.9 that''s still noise. Your
+  priors haven''t been challenged yet. Step outside RELIANCE (energy): pick a stock
+  from a different sector and make one BULL/BEAR call. The rating won''t tighten until
+  the cohort spans 2+ sectors.'
 tone: analytical
 grounding_facts:
 - calls_made=2

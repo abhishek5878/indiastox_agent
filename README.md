@@ -1,4 +1,4 @@
-# IndiaStox — agent-native analytics substrate
+# IndiaStox. Agent-native analytics substrate
 
 > **Live demo:** [indiastox.vercel.app](https://indiastox.vercel.app) ·
 > **API:** [indiastox-api.onrender.com](https://indiastox-api.onrender.com/api/health) ·
@@ -11,11 +11,11 @@ upward** with confidence_stars (1-star ~ 36% → 5-star ~ 57%) but stays
 well below the perfect-calibration diagonal. The pipeline carries a real
 signal: every persona has a latent `true_skill ~ N(0, 1)` that biases
 both their BULL/BEAR outcomes and their confidence_stars. The
-stars→probability mapping is overconfident — the right calibration story
+stars→probability mapping is overconfident. The right calibration story
 for a young product. `make calibration` regenerates against the live warehouse.*
 
 A working miniature of the production analytics platform behind
-IndiaStox — a consumer prediction product where every user action is
+IndiaStox. A consumer prediction product where every user action is
 "Make a Call" (BULL or BEAR), and every call is also a market bet the
 platform scores. The Gyaani reputation system collapses call accuracy
 into social capital, feed weight, and discovery.
@@ -47,14 +47,14 @@ agent tool calls. Today: 8ms p95 on `ghost_rate`, ~85K events, one laptop.
 
 ## The live demo, in 90 seconds
 
-1. Open **[indiastox.vercel.app](https://indiastox.vercel.app)** — the
+1. Open **[indiastox.vercel.app](https://indiastox.vercel.app)**. The
    world is alive on arrival, sim time advances every 2.5s, KPIs auto-
    refresh, the event stream prepends new rows via WebSocket.
-2. Click **"Ask the agent a real question" → /chat** — the page auto-fires
+2. Click **"Ask the agent a real question" → /chat**. The page auto-fires
    a preset prompt on first visit. Watch Claude pick tools, parse typed
    confidence, and answer with a real number. Every tool call is audit-
    logged and visible inline.
-3. Click **"See the Critic block a bad idea" → /proposals** — the pending
+3. Click **"See the Critic block a bad idea" → /proposals**. The pending
    proposal with the most fired confounders is elevated as a featured
    critique. Each confounder is human-labelled, hover-explained, and shown
    with live evidence. Below it: the Critic's alternative proposal.
@@ -91,11 +91,11 @@ the audit trail records the same struct; the eval grades the same struct.
 **Bare floats from tools are rejected at runtime by `@tool_result`.**
 
 The UI surfaces all 12 metrics with humanized labels alongside their raw
-function names — so a reviewer who sees "Weekly active callers" on
+function names. So a reviewer who sees "Weekly active callers" on
 /proposals can read `(weekly_active_posters)` right next to it and run
 `make metric M=weekly_active_posters` without ambiguity.
 
-## "Why this number?" — every metric is a calibrated explanation
+## "Why this number?". Every metric is a calibrated explanation
 
 ```bash
 make trace M=ghost_rate
@@ -155,7 +155,7 @@ World, walks the three-pass identity resolver, runs the LLM agent against
 the canonical questions, fires the proposal pipeline pending→approved,
 and ends on the failure-mode harness.
 
-### The four panels — rendered, not described
+### The four panels. Rendered, not described
 
 ![four-panel dashboard mosaic](assets/dashboard_mosaic.png)
 
@@ -163,19 +163,19 @@ and ends on the failure-mode harness.
 (channel attribution) reads from the `metric_results` materialization;
 the other three read fact_* tables directly.*
 
-### The agent's scorecard — every miss visible
+### The agent's scorecard. Every miss visible
 
 ![agent eval scorecard](assets/eval_scorecard.png)
 
 *`make eval-scorecard` re-renders this from the latest run in
 [`eval/results/`](eval/results/). FM6 fails the build if this score
-reaches 31/33 — a system that breaks itself when it looks too good is
+reaches 31/33. A system that breaks itself when it looks too good is
 the worldview the brief is hiring for.*
 
 ## Deployment
 
 Frontend deploys to Vercel (`vercel deploy --prod` from `frontend/`).
-Backend deploys to Render via [`render.yaml`](render.yaml) — auto-redeploys
+Backend deploys to Render via [`render.yaml`](render.yaml). Auto-redeploys
 on push to `main`. A GitHub Actions cron in
 [`.github/workflows/keep-warm.yml`](.github/workflows/keep-warm.yml) pings
 `/api/health` every 12 minutes so the Render free-tier dyno never sleeps.
@@ -183,14 +183,14 @@ on push to `main`. A GitHub Actions cron in
 Free-tier caveats and the deployment recipe in full:
 [ONBOARDING.md §8](ONBOARDING.md).
 
-## Product terminology — "Make a Call"
+## Product terminology, "Make a Call"
 
 The IndiaStox product calls the user-action surface **"Make a Call"**
 with **BULL / BEAR** as the two directions. The console reflects this
 everywhere a user sees a label.
 
 The data layer (`fact_prediction`, `direction`, `prediction_made` event
-kind) still uses the legacy `prediction` lexicon — a wire-protocol
+kind) still uses the legacy `prediction` lexicon. A wire-protocol
 decision we'll revisit at v2 to avoid breaking 41 metric tests. The LLM
 agent's system prompt explicitly rewrites the legacy word to "call" in
 any user-facing reply. If you're adding a new user-facing string and you
@@ -210,7 +210,7 @@ can skip it. If you're going to extend the substrate, read
 [`.claude/CLAUDE.md`](.claude/CLAUDE.md) and the latest entries in
 [`.claude/tasks/progress.md`](.claude/tasks/progress.md).
 
-[ONBOARDING.md](ONBOARDING.md) is the team-facing version — start there
+[ONBOARDING.md](ONBOARDING.md) is the team-facing version. Start there
 if you've just been added to this repo.
 
 ## License

@@ -131,7 +131,7 @@ export function Tooltip({ children, content, side = "top" }: {
   );
 }
 
-// ----- Hint icon — pairs with Tooltip -----
+// ----- Hint icon. Pairs with Tooltip -----
 export function HintIcon({ content }: { content: React.ReactNode }) {
   return (
     <Tooltip content={content}>
@@ -140,7 +140,7 @@ export function HintIcon({ content }: { content: React.ReactNode }) {
   );
 }
 
-// ----- WowCallout — for hero/featured cards that need emphasis -----
+// ----- WowCallout. For hero/featured cards that need emphasis -----
 export function WowCallout({ kicker, title, children, tone = "info" }: {
   kicker: string;
   title: string;

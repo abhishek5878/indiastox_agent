@@ -33,21 +33,21 @@ critique:
   generated_at: '2026-05-18T20:08:59.953186+00:00'
   proposal_id: PROP-83ef8225c0d3
   severity: low
-  counter_argument: "This is the right kind of policy proposal \u2014 it targets the\
-    \ substrate's calibration directly rather than acquisition. The risk is detector\
-    \ quality: a 5% false-positive rate at the scale of 8500 submissions silently\
-    \ bans 425 organic authors, which compounds across weeks.\nDATA-DRIVEN CONCERNS\
-    \ \u2014 1 confounder fires:\n  \u2022 prediction_market_noise_floor: brier_score\
-    \ = 0.3053 \u2014 already near the noise floor. Removing 11.5% of posts may not\
-    \ be enough lift to detect over the floor's variance."
+  counter_argument: "This is the right kind of policy proposal. It targets the substrate's\
+    \ calibration directly rather than acquisition. The risk is detector quality:\
+    \ a 5% false-positive rate at the scale of 8500 submissions silently bans 425\
+    \ organic authors, which compounds across weeks.\nDATA-DRIVEN CONCERNS, 1 confounder\
+    \ fires:\n  • prediction_market_noise_floor: brier_score = 0.3053. Already near\
+    \ the noise floor. Removing 11.5% of posts may not be enough lift to detect over\
+    \ the floor's variance."
   confounder_checks:
   - name: klaviyo_deliverability_drop
     fired: false
     evidence: Detector lives in post-submission path; email infra unaffected.
   - name: prediction_market_noise_floor
     fired: true
-    evidence: "brier_score = 0.3053. FIRES \u2014 3.5pp lift may not surface above\
-      \ floor variance at n=8500."
+    evidence: brier_score = 0.3053. FIRES, 3.5pp lift may not surface above floor
+      variance at n=8500.
   - name: identity_resolution_drift
     fired: false
     evidence: metric_gameability_index = 0.00.
@@ -58,12 +58,12 @@ critique:
     fired: false
     evidence: Submission volumes vary <2pp seasonally; not load-bearing.
   confounders_fired: 1
-  acquisition_impact: "zero \u2014 does not touch acquisition path."
-  reversibility_cost: "medium \u2014 false-flagged authors need a human appeals path\
-    \ before launch."
-  alternative_proposal: "Ship the detector in shadow mode for 14 days first \u2014\
-    \ flag but don't act. Use the shadow data to calibrate the precision/recall threshold\
-    \ before any user-visible action. The headline brier lift should be measured against\
-    \ the shadow baseline, not the pre-detector baseline."
+  acquisition_impact: zero. Does not touch acquisition path.
+  reversibility_cost: medium. False-flagged authors need a human appeals path before
+    launch.
+  alternative_proposal: Ship the detector in shadow mode for 14 days first. Flag but
+    don't act. Use the shadow data to calibrate the precision/recall threshold before
+    any user-visible action. The headline brier lift should be measured against the
+    shadow baseline, not the pre-detector baseline.
   session_id: policy-598fa6bfed2e
   critic_version: 2.0.0

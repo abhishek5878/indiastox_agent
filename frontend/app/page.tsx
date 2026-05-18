@@ -51,7 +51,7 @@ export default function LivingWorldPage() {
     })();
   }, []);
 
-  // WebSocket — prepend incoming events.
+  // WebSocket. Prepend incoming events.
   useEffect(() => {
     const ws = openSimEventsWS((evt) => {
       if (lens !== "all" && evt.lens !== lens && evt.lens !== "all") return;
@@ -89,7 +89,7 @@ export default function LivingWorldPage() {
   }
 
   const simWhen = kpis ? new Date(kpis.sim_now) : null;
-  const simWhenStr = simWhen ? simWhen.toUTCString().replace(" GMT", "").replace(/^[A-Z][a-z]{2}, /, "") : "—";
+  const simWhenStr = simWhen ? simWhen.toUTCString().replace(" GMT", "").replace(/^[A-Z][a-z]{2}, /, "") : "";
 
   return (
     <div className="px-8 py-7 max-w-[1400px] mx-auto">
@@ -103,7 +103,7 @@ export default function LivingWorldPage() {
         </div>
         <h1 className="text-3xl font-semibold tracking-tight">A live, agent-native analytics substrate.</h1>
         <p className="mt-2 text-sm text-[var(--muted-foreground)] max-w-3xl leading-relaxed">
-          Every number you see was returned by a tool — the same tool the LLM agent calls, the same tool the
+          Every number you see was returned by a tool. The same tool the LLM agent calls, the same tool the
           Critic checks proposals with, the same tool the CS agent runs interventions through. Dashboards are
           a degraded read of the substrate, not the product.
         </p>
@@ -198,7 +198,7 @@ export default function LivingWorldPage() {
           {events.length === 0 ? (
             <div className="text-sm text-[var(--muted-foreground)] py-12 text-center">
               <div className="inline-block h-2 w-2 rounded-full bg-emerald-400 pulse-dot mr-2 align-middle" />
-              Warming up the world — first personas arriving…
+              Warming up the world. First personas arriving…
             </div>
           ) : (
             <div className="mono text-[12px] max-h-[520px] overflow-auto divide-y divide-[var(--border)]">

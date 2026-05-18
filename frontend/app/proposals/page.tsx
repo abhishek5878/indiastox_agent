@@ -27,7 +27,7 @@ export default function ProposalsPage() {
   }
 
   // The featured proposal is the pending one with the highest count of fired
-  // confounders — the clearest case the Critic earned its keep.
+  // confounders. The clearest case the Critic earned its keep.
   const featured = status === "pending"
     ? items
         .filter((p) => p.critique?.confounder_checks?.some((c: any) => c.fired))
@@ -58,7 +58,7 @@ export default function ProposalsPage() {
         <WowCallout
           tone="warn"
           kicker={`Featured · ${firedCount(featured)} of ${featured.critique?.confounder_checks?.length ?? 0} confounders fired`}
-          title="The Critic just blocked this proposal — in plain English."
+          title="The Critic just blocked this proposal. In plain English."
         >
           <FeaturedCritique p={featured} busy={busy === featured.proposal_id} onAct={act} />
         </WowCallout>
@@ -213,7 +213,7 @@ function ProposalCard({ p, busy, onAct, open, onToggle }: {
                       const entry = CONFOUNDERS[c.name];
                       return (
                         <div key={i} className="text-xs flex gap-2 items-start">
-                          <Badge variant={c.fired ? "destructive" : "outline"} className="shrink-0 min-w-[60px] justify-center text-[10px]">{c.fired ? "FIRED" : "—"}</Badge>
+                          <Badge variant={c.fired ? "destructive" : "outline"} className="shrink-0 min-w-[60px] justify-center text-[10px]">{c.fired ? "FIRED" : ""}</Badge>
                           <div className="w-[220px] shrink-0">
                             <span className="font-medium">{entry?.label || humanizeConfounder(c.name)}</span>
                             {entry?.long && <HintIcon content={entry.long} />}

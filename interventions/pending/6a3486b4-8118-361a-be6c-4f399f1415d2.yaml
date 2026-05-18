@@ -1,10 +1,10 @@
 user_id: 6a3486b4-8118-361a-be6c-4f399f1415d2
 risk_score: 6.956880953433021
-intervention_text: "Your BEAR on HDFC closed the other way \u2014 normal at this sample\
-  \ size, but the next 3 calls will move your rating more than this one did. You've\
-  \ explored 1 tickers \u2014 HDFC. At 2 calls (phi 214.9) we can't yet tell if there's\
-  \ an edge in banking or just curiosity. Two more Make-a-Calls in banking and the\
-  \ leaderboard ranks you. Right now you're invisible."
+intervention_text: Your BEAR on HDFC closed the other way. Normal at this sample size,
+  but the next 3 calls will move your rating more than this one did. You've explored
+  1 tickers, HDFC. At 2 calls (phi 214.9) we can't yet tell if there's an edge in
+  banking or just curiosity. Two more Make-a-Calls in banking and the leaderboard
+  ranks you. Right now you're invisible.
 tone: discovery
 grounding_facts:
 - calls_made=2

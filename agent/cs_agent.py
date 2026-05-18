@@ -1,4 +1,4 @@
-"""CS Agent — at-risk-user interventions.
+"""CS Agent. At-risk-user interventions.
 
 Finds the 10 users most at risk of churning before contributing meaningfully
 and drafts a personalized intervention for each, grounded in their actual
@@ -13,7 +13,7 @@ At-risk definition (all four conditions must hold):
     plays 1–2 times/week → faithful Glicko-2 keeps phi ≥ 300). Our
     synthetic generator gives users up to 10 predictions/week, which
     drives Glicko-2 phi down to ~200 even after one rating period. The
-    percentile override is the equivalent rule against this dataset —
+    percentile override is the equivalent rule against this dataset,
     "the top quartile of uncertainty" is what `phi > 300` means in
     real-world deployment conditions.
   - zero predictions in the last 3 days of the synthetic week
@@ -63,7 +63,7 @@ QUIET_CUTOFF_NAIVE = QUIET_CUTOFF.replace(tzinfo=None)
 
 def find_at_risk_users(top_n: int = 10) -> pd.DataFrame:
     if not SKILL_PARQUET.exists():
-        raise FileNotFoundError(f"{SKILL_PARQUET} missing — run `make skill`")
+        raise FileNotFoundError(f"{SKILL_PARQUET} missing. Run `make skill`")
     skill = pd.read_parquet(SKILL_PARQUET)
 
     con = duckdb.connect(str(WAREHOUSE), read_only=False)
@@ -109,7 +109,7 @@ def find_at_risk_users(top_n: int = 10) -> pd.DataFrame:
 
 
 def get_user_predictions(con, user_id: str) -> list[dict]:
-    """Use the caller's existing DuckDB connection — DuckDB rejects mixing
+    """Use the caller's existing DuckDB connection. DuckDB rejects mixing
     read-only and read-write connections to the same file in one process.
     """
     rows = con.execute(
@@ -132,7 +132,7 @@ def compose_intervention(user_row, predictions: list[dict]) -> dict:
 
     The previous version templated only two heads (analytical vs discovery) and
     referenced the ticker but not the outcome. Production reviewer flagged the
-    monotony: "your RELIANCE call closed -2.1% Friday — that's normal at this
+    monotony: "your RELIANCE call closed -2.1% Friday. That's normal at this
     sample size, but the next 3 calls matter more than this one did" is what
     a real CS nudge would say. This version pulls the most recent *resolved*
     call, its outcome, and varies the phrasing per user via a stable seed.
@@ -195,11 +195,11 @@ def compose_intervention(user_row, predictions: list[dict]) -> dict:
         dirn = last_resolved.get("direction", "")
         out = last_resolved.get("outcome", "")
         if out == "WIN":
-            last_ref = f"Your {dirn} on {sym} closed correctly — that's signal, but at phi {phi:.0f} it's still one data point. "
+            last_ref = f"Your {dirn} on {sym} closed correctly. That's signal, but at phi {phi:.0f} it's still one data point. "
         elif out == "LOSS":
-            last_ref = f"Your {dirn} on {sym} closed the other way — normal at this sample size, but the next 3 calls will move your rating more than this one did. "
+            last_ref = f"Your {dirn} on {sym} closed the other way. Normal at this sample size, but the next 3 calls will move your rating more than this one did. "
         elif out == "DRAW":
-            last_ref = f"Your {dirn} on {sym} closed flat — at phi {phi:.0f} we can't tell if that was a coin flip or a read. "
+            last_ref = f"Your {dirn} on {sym} closed flat. At phi {phi:.0f} we can't tell if that was a coin flip or a read. "
 
     if channel == "unstop":
         tone = "analytical"
@@ -207,7 +207,7 @@ def compose_intervention(user_row, predictions: list[dict]) -> dict:
             head = (
                 f"{last_ref}"
                 f"{n_calls} calls in, {n_correct} landed correctly. "
-                f"Your Gyaani uncertainty sits at phi {phi:.1f}, mu {mu:.0f} — 3 more resolved calls and the rating stabilises."
+                f"Your Gyaani uncertainty sits at phi {phi:.1f}, mu {mu:.0f}, 3 more resolved calls and the rating stabilises."
             )
             action = f"Pick one stock outside {fav_sector} this week and call BULL or BEAR. Diversity is what tightens phi."
         elif correct_tickers and variant_idx == 1:
@@ -221,7 +221,7 @@ def compose_intervention(user_row, predictions: list[dict]) -> dict:
             head = (
                 f"{last_ref}"
                 f"{n_calls} call{'s' if n_calls != 1 else ''} this week, none of the resolved ones landed. "
-                f"At phi {phi:.1f} that's still noise — your priors haven't been challenged yet."
+                f"At phi {phi:.1f} that's still noise. Your priors haven't been challenged yet."
             )
             action = (
                 f"Step outside {fav_ticker or 'your current set'} ({fav_sector}): pick a stock from a different sector "
@@ -231,7 +231,7 @@ def compose_intervention(user_row, predictions: list[dict]) -> dict:
             tickers_str = ", ".join(sorted(set(tickers))[:2]) if tickers else "a narrow set"
             head = (
                 f"{last_ref}"
-                f"Quiet week — {n_calls} call{'s' if n_calls != 1 else ''} on the board ({tickers_str}), "
+                f"Quiet week, {n_calls} call{'s' if n_calls != 1 else ''} on the board ({tickers_str}), "
                 f"mu {mu:.0f} with phi {phi:.1f}. "
                 f"Inactivity is the fastest way to lose Gyaani standing on the W01 leaderboard."
             )
@@ -242,14 +242,14 @@ def compose_intervention(user_row, predictions: list[dict]) -> dict:
             t_sample = ", ".join(sorted(set(tickers))[:3])
             head = (
                 f"{last_ref}"
-                f"You've explored {len(set(tickers))} tickers — {t_sample}. "
+                f"You've explored {len(set(tickers))} tickers, {t_sample}. "
                 f"At {n_calls} call{'s' if n_calls != 1 else ''} (phi {phi:.1f}) we can't yet tell if there's an edge in {fav_sector} or just curiosity."
             )
             action = f"Two more Make-a-Calls in {fav_sector} and the leaderboard ranks you. Right now you're invisible."
         elif tickers and variant_idx == 1:
             head = (
                 f"{last_ref}"
-                f"{n_calls} call{'s' if n_calls != 1 else ''} placed via WhatsApp share, most recent on {fav_ticker or 'the watchlist'} — "
+                f"{n_calls} call{'s' if n_calls != 1 else ''} placed via WhatsApp share, most recent on {fav_ticker or 'the watchlist'}, "
                 f"that puts you in the 17.6% dark cohort the attribution layer can't fully bound. "
                 f"The product can still rank you (mu {mu:.0f}), but only on resolved calls."
             )
@@ -260,15 +260,15 @@ def compose_intervention(user_row, predictions: list[dict]) -> dict:
                 f"You signed up via a forwarded link and have made {n_calls} call{'s' if n_calls != 1 else ''} "
                 f"({fav_ticker or 'no recent ticker'} most recently). At phi {phi:.1f}, the rating engine is still learning your prior."
             )
-            action = "The Movers tab surfaces stocks that moved >2% today. Pick one, call BULL or BEAR — that's enough."
+            action = "The Movers tab surfaces stocks that moved >2% today. Pick one, call BULL or BEAR. That's enough."
         else:
             head = (
                 f"{last_ref}"
                 f"You arrived through a WhatsApp forward and made {n_calls} call{'s' if n_calls != 1 else ''}, "
                 f"last one on {fav_ticker or 'an unknown ticker'} (phi {phi:.1f}, mu {mu:.0f}). "
-                f"The first 3 resolved calls are what set the Gyaani prior — after that, drift gets harder to undo."
+                f"The first 3 resolved calls are what set the Gyaani prior. After that, drift gets harder to undo."
             )
-            action = f"Make a Call on any of last week's gainers — {fav_sector if fav_sector != 'your usual sector' else 'pick a sector you like'}. One BULL/BEAR call before Sunday."
+            action = f"Make a Call on any of last week's gainers, {fav_sector if fav_sector != 'your usual sector' else 'pick a sector you like'}. One BULL/BEAR call before Sunday."
 
     intervention_text = head + " " + action
     estimated_lift = 0.05 + (0.05 if correct_tickers else 0.0)

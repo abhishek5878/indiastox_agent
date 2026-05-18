@@ -16,17 +16,17 @@ export const CONFOUNDERS: Record<string, GlossaryEntry> = {
   prediction_market_noise_floor: {
     label: "Noise-floor proximity",
     short: "Are user calls only marginally better than random?",
-    long: "Compares brier_score against the random-guess baseline of 0.25. If the substrate is near the floor, any channel intervention is fitting noise — BULL/BEAR resolutions can't tell the variants apart.",
+    long: "Compares brier_score against the random-guess baseline of 0.25. If the substrate is near the floor, any channel intervention is fitting noise. BULL/BEAR resolutions can't tell the variants apart.",
   },
   identity_resolution_drift: {
     label: "Identity-graph drift",
     short: "Did the join logic change since this proposal was scored?",
-    long: "Checks metric_gameability_index — the hash of every metric definition + source table version. If a definition changed mid-experiment, the headline number is comparing apples to a different apple.",
+    long: "Checks metric_gameability_index. The hash of every metric definition + source table version. If a definition changed mid-experiment, the headline number is comparing apples to a different apple.",
   },
   dark_channel_dominance: {
     label: "Dark-channel floor",
     short: "How much CAC is unknowable by construction?",
-    long: "dark_channel_fraction counts users whose first touchpoint is WhatsApp forwards / IRL screenshots — no UTM, no attribution. Any attribution-side proposal is bounded by this floor.",
+    long: "dark_channel_fraction counts users whose first touchpoint is WhatsApp forwards / IRL screenshots. No UTM, no attribution. Any attribution-side proposal is bounded by this floor.",
   },
   exam_season_seasonality: {
     label: "Exam-season effect",
@@ -48,12 +48,12 @@ export const METRICS: Record<string, GlossaryEntry> = {
   brier_score: {
     label: "Brier score",
     short: "Call calibration. Lower is better. Random = 0.25.",
-    long: "Mean squared error between a user's confidence-stars (rescaled to probability) and their actual BULL/BEAR outcomes. The agent's eval also asks for the calibration *string* alongside the number — see /eval.",
+    long: "Mean squared error between a user's confidence-stars (rescaled to probability) and their actual BULL/BEAR outcomes. The agent's eval also asks for the calibration *string* alongside the number. See /eval.",
   },
   dark_channel_fraction: {
     label: "Dark-channel fraction",
     short: "Share of users arriving through unmeasurable surfaces.",
-    long: "17.6% of W01 users come in through WhatsApp forwards, Telegram @indiastox shares, IRL screenshots — surfaces that carry no UTM and no consent-bound identifier. The CAC bound is wide because the substrate types the uncertainty (channel_cac_bounds returns a lower + upper interval) rather than collapsing it to a point estimate. Any attribution-side proposal is bounded by this floor.",
+    long: "17.6% of W01 users come in through WhatsApp forwards, Telegram @indiastox shares, IRL screenshots. Surfaces that carry no UTM and no consent-bound identifier. The CAC bound is wide because the substrate types the uncertainty (channel_cac_bounds returns a lower + upper interval) rather than collapsing it to a point estimate. Any attribution-side proposal is bounded by this floor.",
   },
   metric_gameability_index: {
     label: "Gameability index",
@@ -88,7 +88,7 @@ export const TERMS: Record<string, GlossaryEntry> = {
   tool_call: {
     label: "Tool call",
     short: "Every metric is exposed as a function the agent can invoke.",
-    long: "All numbers — dashboard tiles, agent answers, CS interventions — flow through the same audit-logged ToolSession. There is no separate \"query for the dashboard.\"",
+    long: "All numbers. Dashboard tiles, agent answers, CS interventions. Flow through the same audit-logged ToolSession. There is no separate \"query for the dashboard.\"",
   },
   critic: {
     label: "Critic Agent v2.0.0",
@@ -97,7 +97,7 @@ export const TERMS: Record<string, GlossaryEntry> = {
   },
   audit_log: {
     label: "Audit log",
-    short: "Every tool call lands in agent_actions — append-only.",
+    short: "Every tool call lands in agent_actions. Append-only.",
     long: "Same stream whether the caller is the Living World sim, the LLM growth agent, the CS agent, or the human dashboard. The /audit page is a degraded read of this stream.",
   },
 };

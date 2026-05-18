@@ -1,4 +1,4 @@
-"""LLM-driven Growth Agent — Anthropic SDK, claude-sonnet-4-6.
+"""LLM-driven Growth Agent. Anthropic SDK, claude-sonnet-4-6.
 
 Proof point for the brief's "substrate is LLM-pluggable" claim. Same
 canonical questions as `agent.growth_agent.GrowthAgent`; same
@@ -6,9 +6,9 @@ canonical questions as `agent.growth_agent.GrowthAgent`; same
 contract. The router is the LLM instead of a hand-coded handler dict.
 
 Three questions wired so far (the eval's most-distinctive shapes):
-  Q01 — pull-a-number (ghost_rate, surface confidence + interpretation)
-  Q09 — answer-with-bounds (dark fraction + channel CAC bounds)
-  Q10 — refuse-when-unknowable (counterfactual lift, propose data
+  Q01. Pull-a-number (ghost_rate, surface confidence + interpretation)
+  Q09. Answer-with-bounds (dark fraction + channel CAC bounds)
+  Q10. Refuse-when-unknowable (counterfactual lift, propose data
         collection instead of a number)
 
 Usage:
@@ -52,7 +52,7 @@ MAX_TOOL_TURNS = 8
 
 
 # ---------------------------------------------------------------------------
-# Tool-schema bridge — render each Python tool as an Anthropic tool spec.
+# Tool-schema bridge. Render each Python tool as an Anthropic tool spec.
 # ---------------------------------------------------------------------------
 
 def _python_param_to_json_schema(name: str, hint, default) -> dict:
@@ -113,12 +113,12 @@ layer that returns typed MetricResult objects with a `value`,
 `trace`. ALWAYS read the trace + interpretation; surface confidence
 and window_open in your final answer.
 
-PRODUCT TERMINOLOGY — this is mandatory:
+PRODUCT TERMINOLOGY. This is mandatory:
   - When referring to a user action, say "Call" or "Make a Call",
     NEVER "prediction" or "predict". The product calls this surface
     "Make a Call" with BULL/BEAR as the two directions.
   - "Calls landed", "calls resolved", "weekly active callers",
-    "time-to-first-call" — match the product lexicon.
+    "time-to-first-call". Match the product lexicon.
   - When you quote a metric's `interpretation` string and that string
     contains the word "prediction" or "predictions", rewrite the user-
     facing sentence in your answer to use "call(s)" instead. The
@@ -254,7 +254,7 @@ class LLMGrowthAgent:
 
             messages.append(dict(role="user", content=tool_results_blocks))
 
-        # Exhausted turns without an end_turn — return whatever we have.
+        # Exhausted turns without an end_turn. Return whatever we have.
         return LLMAnswer(
             question_id, question_text, None,
             f"(MAX_TOOL_TURNS={MAX_TOOL_TURNS} reached without end_turn)",
@@ -284,7 +284,7 @@ def main() -> None:
     agent = LLMGrowthAgent()
     for qid in qids:
         text = CANONICAL.get(qid, f"(unknown question id: {qid})")
-        print(f"\n=== {qid} — {text} ===\n")
+        print(f"\n=== {qid}, {text} ===\n")
         try:
             ans = agent.answer(qid, text)
         except Exception as e:

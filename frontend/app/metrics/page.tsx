@@ -122,7 +122,7 @@ export default function MetricsPage() {
           {result && (
             <Card>
               <CardHeader>
-                <CardTitle>Result — {result.metric_name} <span className="opacity-60 mono">({result.definition_version})</span></CardTitle>
+                <CardTitle>Result, {result.metric_name} <span className="opacity-60 mono">({result.definition_version})</span></CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-4 gap-4 mb-4">

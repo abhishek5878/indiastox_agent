@@ -14,7 +14,7 @@ export default function EvalPage() {
 
   if (!run) return (
     <div className="px-8 py-7">
-      <div className="text-sm text-[var(--muted-foreground)]">No eval runs yet — run `make eval`.</div>
+      <div className="text-sm text-[var(--muted-foreground)]">No eval runs yet. Run `make eval`.</div>
     </div>
   );
 
@@ -26,7 +26,7 @@ export default function EvalPage() {
       <header className="mb-6">
         <div className="text-xs font-medium tracking-widest text-[var(--muted-foreground)] uppercase">Eval</div>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight">
-          Scorecard — {run.total_score} / {run.max_total}{" "}
+          Scorecard, {run.total_score} / {run.max_total}{" "}
           <Badge variant={pass ? "success" : "destructive"} className="ml-2 align-middle">
             FM6 {pass ? "PASS" : "FAIL"} (threshold &lt; 31)
           </Badge>

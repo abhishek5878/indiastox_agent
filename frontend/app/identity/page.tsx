@@ -25,7 +25,7 @@ export default function IdentityPage() {
     <div className="px-8 py-7 max-w-[1400px] mx-auto">
       <header className="mb-6">
         <div className="text-xs font-medium tracking-widest text-[var(--muted-foreground)] uppercase">Identity graph</div>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight">Confidence is a number — never a yes/no.</h1>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight">Confidence is a number. Never a yes/no.</h1>
         <p className="mt-1 text-sm text-[var(--muted-foreground)] max-w-2xl">
           Every match between systems carries a typed float + provenance. Search a user; inspect their edges;
           browse the 170 shared-device pairs the resolver refused to merge.

@@ -1,10 +1,10 @@
 proposal_id: PROP-f5b0e2924b9f
 created_ts: '2026-05-18T20:08:59.953186+00:00'
 triggered_by_action_id: act-5dcbc6ed9a5b4cb5
-hypothesis: "Gating the Pre-IPO ticker tray behind 3 resolved BULL/BEAR calls would\
-  \ lift weekly_active_callers among Tier-2 students by 8pp \u2014 Pre-IPO is the\
-  \ stickiest content surface and currently sits behind a flat 'follow' wall, not\
-  \ behind earned access."
+hypothesis: Gating the Pre-IPO ticker tray behind 3 resolved BULL/BEAR calls would
+  lift weekly_active_callers among Tier-2 students by 8pp. Pre-IPO is the stickiest
+  content surface and currently sits behind a flat 'follow' wall, not behind earned
+  access.
 affected_metric: weekly_active_posters
 expected_lift_pct: 8.0
 confidence: 0.48
@@ -38,36 +38,36 @@ critique:
   counter_argument: "The hypothesis treats Pre-IPO browse as a behavioural predictor\
     \ and tries to convert it into a behavioural lever. The data only supports the\
     \ first half. Gating Pre-IPO behind earned access risks suppressing the very signal\
-    \ (curiosity) that makes it predictive in the first place.\nDATA-DRIVEN CONCERNS\
-    \ \u2014 2 confounder(s) actually fire against the current substrate:\n  \u2022\
-    \ prediction_market_noise_floor: brier_score = 0.3053 (random-guess baseline =\
-    \ 0.25). FIRES \u2014 gating Pre-IPO on resolved calls penalises new users who\
-    \ are still calibrating; downstream brier may regress.\n  \u2022 exam_season_seasonality:\
-    \ Jan W2 sees a structural 6pp drop in Tier-2 student activity. FIRES \u2014 any\
-    \ 21-day readout on Tier-2 students confounds gating with exam-week dropout."
+    \ (curiosity) that makes it predictive in the first place.\nDATA-DRIVEN CONCERNS,\
+    \ 2 confounder(s) actually fire against the current substrate:\n  • prediction_market_noise_floor:\
+    \ brier_score = 0.3053 (random-guess baseline = 0.25). FIRES. Gating Pre-IPO on\
+    \ resolved calls penalises new users who are still calibrating; downstream brier\
+    \ may regress.\n  • exam_season_seasonality: Jan W2 sees a structural 6pp drop\
+    \ in Tier-2 student activity. FIRES. Any 21-day readout on Tier-2 students confounds\
+    \ gating with exam-week dropout."
   confounder_checks:
   - name: klaviyo_deliverability_drop
     fired: false
     evidence: Email delivery clean this week (0.7% inversion, below 1% threshold).
   - name: prediction_market_noise_floor
     fired: true
-    evidence: "brier_score = 0.3053 (random-guess baseline = 0.25). FIRES \u2014 gating\
-      \ on resolved calls risks penalising new users still calibrating."
+    evidence: brier_score = 0.3053 (random-guess baseline = 0.25). FIRES. Gating on
+      resolved calls risks penalising new users still calibrating.
   - name: identity_resolution_drift
     fired: false
-    evidence: "metric_gameability_index = 0.00. does NOT fire \u2014 all metrics at\
-      \ original hash."
+    evidence: metric_gameability_index = 0.00. does NOT fire. All metrics at original
+      hash.
   - name: dark_channel_dominance
     fired: false
     evidence: Tier-2 student cohort is 91% unstop-attributed; dark-channel floor doesn't
       bind this experiment.
   - name: exam_season_seasonality
     fired: true
-    evidence: "Jan W2 historically sees -6pp Tier-2 student activity vs W1. FIRES\
-      \ \u2014 confounds the 21-day readout."
+    evidence: Jan W2 historically sees -6pp Tier-2 student activity vs W1. FIRES.
+      Confounds the 21-day readout.
   confounders_fired: 2
-  acquisition_impact: "low \u2014 gating affects existing users, not acquisition channels."
-  reversibility_cost: "low \u2014 flag-toggleable; revert in 1 deploy."
+  acquisition_impact: low. Gating affects existing users, not acquisition channels.
+  reversibility_cost: low. Flag-toggleable; revert in 1 deploy.
   alternative_proposal: Run the same gate but with a 14-day exam-week wash-out and
     read out brier_score alongside weekly_active_callers. If brier degrades by >2pp
     under the gate, the lift is just selection effect (callers who'd already calibrated).

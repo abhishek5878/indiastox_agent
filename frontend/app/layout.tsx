@@ -8,7 +8,7 @@ const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"]
 
 export const metadata: Metadata = {
   title: "IndiaStox · Substrate console",
-  description: "Agent-native analytics substrate — live console",
+  description: "Agent-native analytics substrate. Live console",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

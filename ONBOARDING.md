@@ -1,4 +1,4 @@
-# IndiaStox — Team Onboarding
+# IndiaStox. Team Onboarding
 
 > One doc, no slides. Read top-to-bottom in 12 minutes and you'll know what
 > this is, why it's shaped this way, where every piece lives, and how to
@@ -12,7 +12,7 @@ This repo is the **agent-native analytics substrate** behind IndiaStox.
 
 The bet, in one sentence: in a product where every user action ("Make a Call",
 BULL/BEAR) is also a market bet the platform scores, the analytics layer has to
-be a place that agents — Growth, CS, Critic, Eval — can act through, not just a
+be a place that agents. Growth, CS, Critic, Eval. Can act through, not just a
 place humans look at. So we built:
 
 - an **event taxonomy** (append-only, schema-typed),
@@ -41,16 +41,16 @@ interventions through.**
 
 The 9-page console is grouped in the sidebar by intent:
 
-- **See it move** — `/` Living World, `/overview`
-- **Explore the substrate** — `/metrics`, `/identity`, `/audit`
-- **Evaluate** — `/eval`, `/proposals`
-- **Take action** — `/cs`, `/chat`
+- **See it move**, `/` Living World, `/overview`
+- **Explore the substrate**, `/metrics`, `/identity`, `/audit`
+- **Evaluate**, `/eval`, `/proposals`
+- **Take action**, `/cs`, `/chat`
 
 ---
 
 ## 2. A 90-second tour you can give a colleague
 
-1. **Land on `/`.** The world is alive on arrival — sim time advances every
+1. **Land on `/`.** The world is alive on arrival. Sim time advances every
    2.5s, KPIs auto-refresh every 4s, the event stream prepends new rows via
    WebSocket. Three orientation cards under the hero tell the visitor where to
    look next.
@@ -110,12 +110,12 @@ indiastox/
 │   │   └── utils.ts      # cn() helper
 │   └── public/, package.json, ...
 │
-├── core/                 # contracts — change carefully
+├── core/                 # contracts. Change carefully
 │   ├── confidence.py     # MetricResult Pydantic model (typed confidence, version, trace)
 │   ├── source_table_registry.py
 │   └── version_registry.py
 │
-├── metrics/              # the semantic layer — every metric exactly once
+├── metrics/              # the semantic layer. Every metric exactly once
 │   ├── definitions.py    # ghost_rate, brier_score, dark_channel_fraction, ...
 │   ├── skill.py          # Glicko-2 rating engine (paper-verified, Step 5 Illinois)
 │   └── test_metrics.py
@@ -125,13 +125,13 @@ indiastox/
 │
 ├── agent/                # the agent archetypes
 │   ├── llm_growth_agent.py  # Claude with tool-use, used by /api/llm/chat
-│   ├── critic_agent.py      # Critic v2.0.0 — runs 5 confounder checks against live data
+│   ├── critic_agent.py      # Critic v2.0.0. Runs 5 confounder checks against live data
 │   ├── cs_agent.py          # generates personalised nudges for at-risk users
 │   ├── audit_summary.py     # backs /audit
 │   └── position_paper_generator.py
 │
-├── sim/                  # the Living World — synthetic users joining/calling/ghosting
-│   ├── world.py          # tick(WorldState, advance_minutes) — deterministic per seed
+├── sim/                  # the Living World. Synthetic users joining/calling/ghosting
+│   ├── world.py          # tick(WorldState, advance_minutes). Deterministic per seed
 │   ├── watchers.py       # growth_watcher_tick + cs_watcher_tick
 │   └── baseline.py       # snapshot + restore the warehouse
 │
@@ -140,7 +140,7 @@ indiastox/
 ├── bonus/                # experiment_loop, approve workflow, reproduce
 ├── proposals/, interventions/  # YAML inboxes (pending/approved/executed/rejected)
 ├── raw/                  # source NDJSONs (klaviyo, posthog, ga4, unstop, outcomes)
-├── warehouse/            # indiastox.duckdb — the prototype warehouse
+├── warehouse/            # indiastox.duckdb. The prototype warehouse
 ├── assets/               # PNG charts the /overview page embeds
 ├── .github/workflows/    # keep-warm.yml (cron pings /api/health every 12 min)
 ├── Dockerfile, render.yaml  # backend deploy
@@ -158,7 +158,7 @@ These are not style preferences. They are load-bearing.
 Every user-touchpoint match carries a confidence score AND a provenance
 string. If you find yourself writing `is_match: true`, stop and write
 `confidence: float, method: str` instead. The whole identity graph (see
-`identity/`) is built on this — collapsing to a boolean discards the signal
+`identity/`) is built on this. Collapsing to a boolean discards the signal
 that lets downstream metrics know how much to trust a join.
 
 ### 5.2 Metric definitions live in exactly one place
@@ -172,8 +172,8 @@ dashboard is a bug, not a feature.
 Every number that came from a model (attribution, retention forecast,
 identity stitching) carries the version of the model that produced it.
 `MetricResult` (in `core/confidence.py`) enforces this at the type
-boundary. Reasoning over a number later — was this from skill model
-v1.0.0 or v1.1.0? — should be answerable without git archaeology.
+boundary. Reasoning over a number later. Was this from skill model
+v1.0.0 or v1.1.0?. Should be answerable without git archaeology.
 
 ### 5.4 Events are append-only and schema-typed
 
@@ -185,13 +185,13 @@ and the Living World sim alike.
 ### 5.5 Three similar lines is better than a premature abstraction
 
 If you're tempted to factor three near-identical functions into one
-parameterised function, don't — at least not yet. The product is too
+parameterised function, don't. At least not yet. The product is too
 young; the cost of locking in the wrong abstraction is higher than
 the cost of duplicating three lines. Revisit at five.
 
 ---
 
-## 6. The agents — what each one does, where to find it
+## 6. The agents. What each one does, where to find it
 
 | Agent         | File                                | Trigger                            | What it produces                                                        |
 | ------------- | ----------------------------------- | ---------------------------------- | ----------------------------------------------------------------------- |
@@ -210,18 +210,18 @@ There is no other way to touch a metric.
 These run as real tool calls against live data on every proposal. Each
 either fires (with evidence) or doesn't:
 
-1. **klaviyo_deliverability_drop** — scans email-pairs for opened_at <
+1. **klaviyo_deliverability_drop**. Scans email-pairs for opened_at <
    sent_at. Fires above 1% inversion. Catches clock-drift masquerading as
    engagement lift.
-2. **prediction_market_noise_floor** — compares brier_score against the
+2. **prediction_market_noise_floor**. Compares brier_score against the
    random-guess baseline of 0.25. Fires when the substrate is near the
-   floor — any channel-side proposal is fitting noise.
-3. **identity_resolution_drift** — checks metric_gameability_index. Fires
+   floor. Any channel-side proposal is fitting noise.
+3. **identity_resolution_drift**. Checks metric_gameability_index. Fires
    if a metric definition or source-table hash changed mid-experiment.
-4. **dark_channel_dominance** — fires when dark_channel_fraction is high
+4. **dark_channel_dominance**. Fires when dark_channel_fraction is high
    enough to bound the proposal's reach. Attribution-side fixes are
    capped by this floor.
-5. **exam_season_seasonality** — fires when the proposal's readout window
+5. **exam_season_seasonality**. Fires when the proposal's readout window
    overlaps a structural seasonal effect.
 
 Every fired confounder gets attached to the proposal's `critique.confounder_checks`
@@ -275,7 +275,7 @@ pytest metrics/ -v --tb=short      # full metric layer
 
 The discipline: **mandatory tests for substrate logic** (parsers, joins,
 attribution math, identity resolution, metric definitions). **Optional for
-orchestration glue.** And — never mock the database in tests that assert
+orchestration glue.** And. Never mock the database in tests that assert
 join behaviour, identity resolution, or metric computation. Use a real
 local DuckDB.
 
@@ -306,7 +306,7 @@ are all force-added to git for the demo build).
 - Sleeps after 15 min idle. The `.github/workflows/keep-warm.yml` cron
   pings `/api/health` every 12 min so this never happens.
 - No persistent disk. Audit-log writes and any sim.world mutations
-  are wiped on container restart — by design, see §8.4.
+  are wiped on container restart. By design, see §8.4.
 - 512 MB RAM, 0.1 vCPU. Watch memory on the kpis endpoint if you add
   expensive joins.
 
@@ -326,7 +326,7 @@ curl -X PATCH "https://api.vercel.com/v9/projects/<projectId>?teamId=<teamId>" \
 `api/main.py` has a `@app.on_event("startup")` hook that scrubs all
 `sim.world`-sourced rows from `dim_user`, `fact_acquisition`,
 `fact_prediction`, and truncates `sim_events`. This means every cold-start
-gives a pristine demo world — and avoids the deterministic per-tick UUID
+gives a pristine demo world. And avoids the deterministic per-tick UUID
 seeds colliding with previously-inserted rows.
 
 ---
@@ -349,7 +349,7 @@ def my_new_metric(*, week_of: str, acquisition_source: str = "all") -> MetricRes
             value=value,
             confidence=confidence,       # always a float; never a bool
             sample_n=sample_n,
-            interpretation=f"{n}/{total} ({pct:.1%}) ... — explain in plain English",
+            interpretation=f"{n}/{total} ({pct:.1%}) .... Explain in plain English",
             provenance=["cohort_filter:...", "cohort_size:..."],
             trace=["step1", "step2", "step3"],
         )
@@ -399,8 +399,7 @@ agent that writes interventions.
 
 The IndiaStox product uses **"Make a Call"** with **BULL / BEAR** as the
 two directions. The console reflects this everywhere a user sees a
-label. The data layer still uses `fact_prediction` and `direction` —
-that's a wire-protocol decision we'll revisit at v2 when we have time
+label. The data layer still uses `fact_prediction` and `direction`. That's a wire-protocol decision we'll revisit at v2 when we have time
 to migrate without rewriting tests.
 
 Specifically:
@@ -452,7 +451,7 @@ warehouse split at ~50M events) but premature now.
 
 ---
 
-## 14. Glossary — the words this codebase uses
+## 14. Glossary. The words this codebase uses
 
 | Term                       | What it means                                                                 |
 | -------------------------- | ----------------------------------------------------------------------------- |
@@ -463,7 +462,7 @@ warehouse split at ~50M events) but premature now.
 | **Identity confidence**    | A float 0–1 attached to every cross-system identity match. Never a boolean.   |
 | **MetricResult**           | The Pydantic contract every metric tool returns. Carries value + confidence + version + trace. |
 | **Ghost**                  | A user who signs up and never makes a call. Tracked weekly per cohort.        |
-| **Dark channel**           | An acquisition path with no UTM / no consented identifier — typically WhatsApp forwards, Telegram shares. |
+| **Dark channel**           | An acquisition path with no UTM / no consented identifier. Typically WhatsApp forwards, Telegram shares. |
 | **Gameability index**      | Three-axis watchdog (definition-hash drift, source-table drift, value drift) over the metric layer itself. |
 | **Audit log**              | The `agent_actions` table. Every tool call lands here. Append-only, schema-typed. |
 | **Tool call / ToolSession** | The only way to read or compute a metric. The audit log is keyed off this surface. |
@@ -474,10 +473,10 @@ warehouse split at ~50M events) but premature now.
 
 ## 15. Who to ping
 
-Repo owner: Abhishek Vyas — github.com/abhishek5878
+Repo owner: Abhishek Vyas. Github.com/abhishek5878
 For substrate / metric questions, prefer reading `POSITION_PAPER.md`
 first; for "how does the Critic decide X" questions, read the actual
-critique payload on `/proposals` — it's verbose by design.
+critique payload on `/proposals`. It's verbose by design.
 
 ---
 
