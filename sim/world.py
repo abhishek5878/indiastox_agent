@@ -722,7 +722,66 @@ def tick(world: WorldState, *, advance_minutes: int = 60) -> dict:
                            payload=dict(symbol=symbol, direction=direction, outcome=outcome),
                            lens="product")
 
-        # ---- 4. Tick metadata ----
+        # ---- 4. Experiment readouts ----
+        # Find approved-proposal experiments whose readout_at <= new_sim_now
+        # and don't yet have a matching experiment_readout. Compute the
+        # actual lift against a noisy fraction of the predicted lift (the
+        # sim doesn't implement the variant; it stochastically grants
+        # 55-105% of the predicted effect to model real-world noise).
+        try:
+            due = con.execute(
+                """
+                WITH started AS (
+                    SELECT
+                      json_extract_string(payload, '$.proposal_id')          AS proposal_id,
+                      json_extract_string(payload, '$.affected_metric')      AS affected_metric,
+                      CAST(json_extract_string(payload, '$.baseline')          AS DOUBLE) AS baseline,
+                      CAST(json_extract_string(payload, '$.predicted_lift_pct') AS DOUBLE) AS predicted_lift_pct,
+                      json_extract_string(payload, '$.readout_at')           AS readout_at
+                    FROM sim_events WHERE kind = 'experiment_started'
+                ),
+                resolved AS (
+                    SELECT DISTINCT json_extract_string(payload, '$.proposal_id') AS proposal_id
+                    FROM sim_events WHERE kind = 'experiment_readout'
+                )
+                SELECT s.proposal_id, s.affected_metric, s.baseline,
+                       s.predicted_lift_pct, s.readout_at
+                FROM started s LEFT JOIN resolved r USING (proposal_id)
+                WHERE r.proposal_id IS NULL
+                  AND s.readout_at IS NOT NULL
+                  AND s.readout_at <= ?
+                """,
+                [new_sim_now.isoformat()],
+            ).fetchall()
+        except Exception:
+            due = []
+        for proposal_id, metric_name, baseline, predicted_lift_pct, readout_at in due:
+            base = float(baseline or 0.0)
+            pred = float(predicted_lift_pct or 0.0)
+            # Predicted post-readout value; noise factor lives in [0.55, 1.05].
+            noise = rng_out.uniform(0.55, 1.05)
+            actual_lift_pct = pred * noise
+            actual_value = base * (1.0 + actual_lift_pct / 100.0) if base else 0.0
+            delta_pp = actual_lift_pct - pred
+            verdict = (
+                "predicted lift held" if abs(delta_pp) <= max(1.0, abs(pred) * 0.15)
+                else "predicted lift missed"
+            )
+            _log_event(con, world, "experiment_readout",
+                       actor=proposal_id,
+                       payload=dict(
+                           proposal_id=proposal_id,
+                           affected_metric=metric_name,
+                           baseline=round(base, 4),
+                           predicted_lift_pct=round(pred, 2),
+                           actual_lift_pct=round(actual_lift_pct, 2),
+                           actual_value=round(actual_value, 4),
+                           delta_pp=round(delta_pp, 2),
+                           verdict=verdict,
+                       ),
+                       lens="growth")
+
+        # ---- 5. Tick metadata ----
         world.sim_now = new_sim_now
         world.tick_count += 1
         _log_event(con, world, "tick_complete", actor="world",

@@ -93,8 +93,89 @@ def _move_and_log(proposal_id: str, new_status: str, action_label: str) -> dict:
     return dict(proposal_id=proposal_id, new_status=new_status)
 
 
+def _start_experiment(proposal_id: str) -> Optional[dict]:
+    """When a proposal is approved, schedule its readout in the sim.
+
+    Stores baseline + predicted_lift_pct + readout_at on an `experiment_started`
+    sim_event. The sim's tick() later detects readouts past due and emits an
+    `experiment_readout` event with actual vs predicted lift. Closes the
+    proposal->experiment->outcome loop.
+    """
+    src = PROPOSALS_DIR / "approved" / f"{proposal_id}.yaml"
+    if not src.exists():
+        return None
+    try:
+        doc = yaml.safe_load(src.read_text())
+    except Exception:
+        return None
+    snap = doc.get("metric_snapshot") or {}
+    baseline = snap.get("value")
+    if baseline is None:
+        return None
+    affected_metric = doc.get("affected_metric") or ""
+    predicted_lift_pct = float(doc.get("expected_lift_pct") or 0.0)
+    estimated_days = int(doc.get("estimated_days") or 7)
+
+    # Pull the sim's current time so readout_at is in sim-time, not wall-time.
+    try:
+        from api.routes.sim import _world
+        sim_now = _world.sim_now
+    except Exception:
+        sim_now = datetime.now(timezone.utc).replace(tzinfo=None)
+    readout_at = sim_now + timedelta(days=estimated_days)
+
+    if WAREHOUSE.exists():
+        con = duckdb.connect(str(WAREHOUSE), read_only=False)
+        try:
+            con.execute(
+                """CREATE TABLE IF NOT EXISTS sim_events (
+                     event_id TEXT PRIMARY KEY, sim_ts TIMESTAMP NOT NULL,
+                     wall_ts TIMESTAMP NOT NULL, kind TEXT NOT NULL,
+                     actor TEXT, payload JSON, lens TEXT
+                   )"""
+            )
+            con.execute(
+                """INSERT INTO sim_events
+                   (event_id, sim_ts, wall_ts, kind, actor, payload, lens)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                [
+                    f"evt-{uuid.uuid4().hex[:16]}",
+                    sim_now,
+                    datetime.now(timezone.utc).replace(tzinfo=None),
+                    "experiment_started",
+                    proposal_id,
+                    json.dumps(dict(
+                        proposal_id=proposal_id,
+                        affected_metric=affected_metric,
+                        baseline=float(baseline),
+                        predicted_lift_pct=predicted_lift_pct,
+                        estimated_days=estimated_days,
+                        readout_at=readout_at.isoformat(),
+                    )),
+                    "growth",
+                ],
+            )
+        finally:
+            con.close()
+    return dict(
+        proposal_id=proposal_id,
+        affected_metric=affected_metric,
+        baseline=float(baseline),
+        predicted_lift_pct=predicted_lift_pct,
+        readout_at=readout_at.isoformat(),
+        estimated_days=estimated_days,
+    )
+
+
+# Need timedelta for _start_experiment.
+from datetime import timedelta  # noqa: E402
+
+
 @router.post("/{proposal_id}/{action}")
 def act(proposal_id: str, action: Literal["approve", "reject", "execute"]):
     target = {"approve": "approved", "reject": "rejected", "execute": "executed"}[action]
     label = {"approve": "proposal_approved", "reject": "proposal_rejected", "execute": "proposal_executed"}[action]
-    return _move_and_log(proposal_id, target, label)
+    result = _move_and_log(proposal_id, target, label)
+    if action == "approve":
+        result["experiment"] = _start_experiment(proposal_id)
+    return result

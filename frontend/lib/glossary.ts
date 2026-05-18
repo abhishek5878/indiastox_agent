@@ -117,6 +117,11 @@ export const METRICS: Record<string, GlossaryEntry> = {
     short: "Share of ghosted users who were re-engaged via an approved CS intervention.",
     long: "Counts unique users with a `user_reengaged` sim_event over unique users with a `user_ghosted` event. Approving an intervention on /cs calls sim.world.reengage_user(user_id), which removes the user from the ghosted set and emits the recovery event. High rate means the sim<->CS loop is closing tight; low rate means the queue is filling faster than approvals drain it.",
   },
+  proposal_lift_calibration_index: {
+    label: "Lift calibration",
+    short: "Mean |actual - predicted| lift pp across resolved experiments.",
+    long: "Closes the Critic's accountability loop. When you approve a proposal, an experiment_started sim_event fires with the Critic's predicted lift. The sim emits experiment_readout when readout_at passes, with the actual lift. This metric averages the absolute pp gap. Lower = the Critic's lift estimates are well calibrated. Sustained gap > 5pp means the model is systematically miscalibrating intervention effects.",
+  },
 };
 
 export const TERMS: Record<string, GlossaryEntry> = {

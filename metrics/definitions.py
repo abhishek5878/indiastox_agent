@@ -49,6 +49,7 @@ DEFS = {
     "gyaani_influence_index": "1.0.0",
     "user_disengagement_rate": "1.0.0",
     "ghost_recovery_rate": "1.0.0",
+    "proposal_lift_calibration_index": "1.0.0",
 }
 
 # Product surface markers. The Pre-IPO ticker tray is a feature on the
@@ -1856,5 +1857,97 @@ def ghost_recovery_rate() -> MetricResult:
             ghosted=len(ghosted),
             recovered=len(overlap),
             backlog=len(ghosted) - len(overlap),
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# 21. proposal_lift_calibration_index. Did experiments hit predicted lift?
+# ---------------------------------------------------------------------------
+
+@versioned("1.0.0")
+def proposal_lift_calibration_index() -> MetricResult:
+    """Mean |actual_lift - predicted_lift| (in pp) across resolved experiments.
+
+    Reads `experiment_readout` sim_events. Each readout carries both the
+    Critic's predicted_lift_pct (from the proposal at approval time) and the
+    actual_lift_pct (computed by the sim at readout_at). The index is the
+    mean absolute pp-gap. Lower = the Critic's lift estimates are well
+    calibrated. The Critic should look at this metric before its next
+    review pass; sustained gap > 5pp means the model is systematically
+    over- or under-estimating intervention effects.
+    """
+    sql = """
+        SELECT
+          json_extract_string(payload, '$.proposal_id')           AS proposal_id,
+          json_extract_string(payload, '$.affected_metric')       AS metric,
+          CAST(json_extract_string(payload, '$.predicted_lift_pct') AS DOUBLE) AS pred,
+          CAST(json_extract_string(payload, '$.actual_lift_pct')    AS DOUBLE) AS actual,
+          json_extract_string(payload, '$.verdict')                AS verdict
+        FROM sim_events WHERE kind = 'experiment_readout'
+    """
+    con = _connect()
+    try:
+        rows = con.execute(sql).fetchall()
+    finally:
+        con.close()
+    if not rows:
+        return MetricResult(
+            metric_name="proposal_lift_calibration_index",
+            value=0.0,
+            confidence=0.0,
+            sample_n=0,
+            provenance=["no_experiments_resolved_yet"],
+            window_open=True,
+            interpretation="No experiments have resolved yet. Approve a proposal and tick the sim past its readout_at to populate.",
+            trace=[
+                "proposal_lift_calibration_index = 0.0 because no experiment_readout events exist.",
+                "the metric needs at least one closed experiment by construction.",
+                "confidence = 0.00 because sample size is zero.",
+            ],
+            definition_version=DEFS["proposal_lift_calibration_index"],
+            computation_sql=sql.strip(),
+            as_of=_now(),
+            breakdowns={},
+        )
+    gaps = [abs(float(r[3] or 0.0) - float(r[2] or 0.0)) for r in rows]
+    mean_gap = sum(gaps) / len(gaps)
+    held = sum(1 for r in rows if r[4] == "predicted lift held")
+    confidence = min(0.95, 0.4 + 0.05 * len(rows))
+    interp = (
+        f"Across {len(rows)} resolved experiments, the average |actual - predicted| "
+        f"lift gap is {mean_gap:.2f}pp. {held}/{len(rows)} verdicts came in as "
+        f"'predicted lift held' (within 15% of prediction or 1pp absolute, whichever is wider). "
+        f"Use this as the Critic's report card: sustained gap > 5pp means the model "
+        f"is systematically miscalibrating intervention effects."
+    )
+    trace = [
+        f"proposal_lift_calibration_index = {mean_gap:.4f} because the average absolute pp gap across {len(rows)} closed experiments is {mean_gap:.2f}.",
+        f"{held} of {len(rows)} experiments hit the 'predicted held' tolerance; the rest missed.",
+        f"confidence = {confidence:.2f} because the gap is deterministic given the events but stabilises with more experiment cycles.",
+    ]
+    return MetricResult(
+        metric_name="proposal_lift_calibration_index",
+        value=float(mean_gap),
+        confidence=float(confidence),
+        sample_n=len(rows),
+        provenance=[f"experiments_resolved:{len(rows)}", f"verdicts_held:{held}"],
+        window_open=False,
+        interpretation=interp,
+        trace=trace,
+        definition_version=DEFS["proposal_lift_calibration_index"],
+        computation_sql=sql.strip(),
+        as_of=_now(),
+        breakdowns=dict(
+            experiments_resolved=len(rows),
+            held=held,
+            mean_abs_gap_pp=round(mean_gap, 2),
+            sample=[
+                dict(proposal_id=r[0][:14], metric=r[1],
+                     predicted=round(float(r[2] or 0), 2),
+                     actual=round(float(r[3] or 0), 2),
+                     verdict=r[4])
+                for r in rows[:5]
+            ],
         ),
     )

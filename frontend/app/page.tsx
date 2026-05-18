@@ -240,6 +240,8 @@ const KIND_LABELS: Record<string, string> = {
   referral_chain: "Referral chain queued",
   user_ghosted: "User ghosted",
   user_reengaged: "User reengaged",
+  experiment_started: "Experiment started",
+  experiment_readout: "Experiment readout",
 };
 
 function EventRow({ evt }: { evt: SimEvent }) {
@@ -249,6 +251,8 @@ function EventRow({ evt }: { evt: SimEvent }) {
     evt.kind === "user_cooled_off" ? "warning" :
     evt.kind === "user_ghosted" ? "destructive" :
     evt.kind === "user_reengaged" ? "success" :
+    evt.kind === "experiment_readout" ? "success" :
+    evt.kind === "experiment_started" ? "info" :
     evt.kind === "news_cascade" ? "info" :
     evt.kind === "leaderboard_sprint" ? "info" :
     evt.kind === "referral_chain" ? "info" :

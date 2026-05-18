@@ -46,6 +46,7 @@ from metrics.definitions import (
     gyaani_influence_index as _gyaani_influence_index,
     user_disengagement_rate as _user_disengagement_rate,
     ghost_recovery_rate as _ghost_recovery_rate,
+    proposal_lift_calibration_index as _proposal_lift_calibration_index,
 )
 from metrics.skill import get_skill_distribution as _get_skill_distribution
 
@@ -156,6 +157,11 @@ def ghost_recovery_rate() -> MetricResult:
     return _ghost_recovery_rate()
 
 
+@tool_result
+def proposal_lift_calibration_index() -> MetricResult:
+    return _proposal_lift_calibration_index()
+
+
 TOOLS: dict[str, Callable[..., MetricResult]] = {
     "weekly_active_posters": weekly_active_posters,
     "time_to_first_action": time_to_first_action,
@@ -177,6 +183,7 @@ TOOLS: dict[str, Callable[..., MetricResult]] = {
     "gyaani_influence_index": gyaani_influence_index,
     "user_disengagement_rate": user_disengagement_rate,
     "ghost_recovery_rate": ghost_recovery_rate,
+    "proposal_lift_calibration_index": proposal_lift_calibration_index,
 }
 
 

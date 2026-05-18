@@ -16,6 +16,7 @@ export default function OverviewPage() {
   const [influence, setInfluence] = useState<MetricResult | null>(null);
   const [disengagement, setDisengagement] = useState<MetricResult | null>(null);
   const [recovery, setRecovery] = useState<MetricResult | null>(null);
+  const [calibration, setCalibration] = useState<MetricResult | null>(null);
   const [reasons, setReasons] = useState<{ reason: string; n: number }[]>([]);
 
   useEffect(() => {
@@ -29,6 +30,7 @@ export default function OverviewPage() {
     metrics.invoke("gyaani_influence_index", { week_of: "2024-W01" }).then(setInfluence).catch(() => {});
     metrics.invoke("user_disengagement_rate", {}).then(setDisengagement).catch(() => {});
     metrics.invoke("ghost_recovery_rate", {}).then(setRecovery).catch(() => {});
+    metrics.invoke("proposal_lift_calibration_index", {}).then(setCalibration).catch(() => {});
     sim.reasons().then(setReasons).catch(() => {});
   }, []);
 
@@ -172,6 +174,21 @@ export default function OverviewPage() {
           />
         </div>
         <BehaviorFingerprint reasons={reasons} />
+      </div>
+
+      <div className="mb-5">
+        <div className="text-xs font-medium tracking-widest text-[var(--muted-foreground)] uppercase mb-3">Loop accountability</div>
+        <div className="grid grid-cols-1 gap-4">
+          <ProductCard
+            title="Proposal lift calibration"
+            valueText={calibration ? `${calibration.value.toFixed(2)} pp` : ""}
+            subtitle={calibration ? `${((calibration.breakdowns as any)?.held || 0)} held · ${((calibration.breakdowns as any)?.experiments_resolved || 0)} resolved` : "approve a proposal + tick past readout_at"}
+            hint={METRICS.proposal_lift_calibration_index.long || METRICS.proposal_lift_calibration_index.short}
+            body={calibration?.interpretation || "Mean |actual - predicted| lift gap across resolved experiments. Closes the Critic's accountability loop."}
+            badge={calibration && calibration.sample_n > 0 ? (calibration.value <= 5 ? "well calibrated" : "miscalibrated") : null}
+            tone="info"
+          />
+        </div>
       </div>
 
       <Card>
