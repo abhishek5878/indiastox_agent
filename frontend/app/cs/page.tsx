@@ -7,13 +7,21 @@ import { useEffect, useState } from "react";
 export default function CSPage() {
   const [items, setItems] = useState<Intervention[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ userId: string; reengaged: boolean } | null>(null);
 
   async function load() { setItems(await interventions.list("pending")); }
   useEffect(() => { load(); }, []);
 
   async function act(userId: string, action: "approve" | "reject") {
     setBusy(userId);
-    try { await interventions.act(userId, action); await load(); } finally { setBusy(null); }
+    try {
+      const res = await interventions.act(userId, action);
+      if (action === "approve") {
+        setToast({ userId, reengaged: !!res.sim_reengaged });
+        setTimeout(() => setToast(null), 5000);
+      }
+      await load();
+    } finally { setBusy(null); }
   }
 
   return (
@@ -22,9 +30,20 @@ export default function CSPage() {
         <div className="text-xs font-medium tracking-widest text-[var(--muted-foreground)] uppercase">CS interventions</div>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight">The CS agent drafts the nudge. You approve the send.</h1>
         <p className="mt-1 text-sm text-[var(--muted-foreground)] max-w-2xl">
-          Same metric layer, identity graph, audit trail. Different agent archetype. Each nudge references the user's actual last BULL/BEAR call and how it resolved, not just their tickers.
+          Same metric layer, identity graph, audit trail. Different agent archetype. Each nudge references the user's actual last BULL/BEAR call and how it resolved, not just their tickers. Approving an intervention also calls <span className="mono">reengage_user</span> in the Living World so the user re-enters the candidate pool.
         </p>
       </header>
+
+      {toast && (
+        <div className={`mb-4 rounded-md border px-4 py-3 text-sm ${toast.reengaged ? "border-emerald-500/40 bg-emerald-500/10" : "border-[var(--border)] bg-[var(--muted)]"}`}>
+          <span className="font-medium mono">{toast.userId.slice(0, 8)}</span>{" "}
+          {toast.reengaged ? (
+            <>approved. <b>Sim re-engagement fired</b>, the user is back in the candidate pool. A <span className="mono">user_reengaged</span> event lands in the Living World stream.</>
+          ) : (
+            <>approved. (User was already active in the sim, no re-engagement needed.)</>
+          )}
+        </div>
+      )}
 
       {items.length === 0 ? (
         <div className="text-sm text-[var(--muted-foreground)]">No pending interventions. Run `make cs-run`.</div>

@@ -45,6 +45,7 @@ from metrics.definitions import (
     cascade_followon_lift as _cascade_followon_lift,
     gyaani_influence_index as _gyaani_influence_index,
     user_disengagement_rate as _user_disengagement_rate,
+    ghost_recovery_rate as _ghost_recovery_rate,
 )
 from metrics.skill import get_skill_distribution as _get_skill_distribution
 
@@ -150,6 +151,11 @@ def user_disengagement_rate() -> MetricResult:
     return _user_disengagement_rate()
 
 
+@tool_result
+def ghost_recovery_rate() -> MetricResult:
+    return _ghost_recovery_rate()
+
+
 TOOLS: dict[str, Callable[..., MetricResult]] = {
     "weekly_active_posters": weekly_active_posters,
     "time_to_first_action": time_to_first_action,
@@ -170,6 +176,7 @@ TOOLS: dict[str, Callable[..., MetricResult]] = {
     "cascade_followon_lift": cascade_followon_lift,
     "gyaani_influence_index": gyaani_influence_index,
     "user_disengagement_rate": user_disengagement_rate,
+    "ghost_recovery_rate": ghost_recovery_rate,
 }
 
 

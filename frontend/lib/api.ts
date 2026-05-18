@@ -50,7 +50,10 @@ export const proposals = {
 export const interventions = {
   list: (status = "pending") => j<Intervention[]>(`/api/interventions?status=${status}`),
   act: (userId: string, action: "approve" | "reject") =>
-    j(`/api/interventions/${userId}/${action}`, { method: "POST" }),
+    j<{ user_id: string; new_status: string; sim_reengaged?: boolean }>(
+      `/api/interventions/${userId}/${action}`,
+      { method: "POST" },
+    ),
 };
 
 // --- Eval ---

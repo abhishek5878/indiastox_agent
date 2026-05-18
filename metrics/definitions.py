@@ -48,6 +48,7 @@ DEFS = {
     "cascade_followon_lift": "1.0.0",
     "gyaani_influence_index": "1.0.0",
     "user_disengagement_rate": "1.0.0",
+    "ghost_recovery_rate": "1.0.0",
 }
 
 # Product surface markers. The Pre-IPO ticker tray is a feature on the
@@ -1777,4 +1778,83 @@ def user_disengagement_rate() -> MetricResult:
         computation_sql=sql_ghosted.strip(),
         as_of=_now(),
         breakdowns=dict(ghosted=len(ghosted_users), active_7d=int(active_7d)),
+    )
+
+
+# ---------------------------------------------------------------------------
+# 20. ghost_recovery_rate. Of users who ghosted, how many did CS bring back?
+# ---------------------------------------------------------------------------
+
+@versioned("1.0.0")
+def ghost_recovery_rate() -> MetricResult:
+    """Share of ghosted users who were re-engaged via an approved CS intervention.
+
+    Counts `user_reengaged` sim_events as the numerator and unique users from
+    `user_ghosted` events as the denominator. This is the read on whether the
+    sim<->CS loop is closing: high value = CS interventions are pulling users
+    back out of disengagement. Low value = the queue is filling faster than
+    CS can drain it (a real product signal the agent can act on).
+    """
+    sql_ghost = "SELECT DISTINCT actor FROM sim_events WHERE kind = 'user_ghosted'"
+    sql_recov = "SELECT DISTINCT actor FROM sim_events WHERE kind = 'user_reengaged'"
+    con = _connect()
+    try:
+        ghosted = {r[0] for r in con.execute(sql_ghost).fetchall()}
+        recovered = {r[0] for r in con.execute(sql_recov).fetchall()}
+    finally:
+        con.close()
+    if not ghosted:
+        return MetricResult(
+            metric_name="ghost_recovery_rate",
+            value=0.0,
+            confidence=0.0,
+            sample_n=0,
+            provenance=["no_ghosted_users_yet"],
+            window_open=True,
+            interpretation="No users have ghosted yet. Tick the world for ~5 sim-days to populate.",
+            trace=[
+                "ghost_recovery_rate = 0.0 because the ghosted set is empty.",
+                "the metric needs at least one ghosted user by construction.",
+                "confidence = 0.00 because sample size is zero.",
+            ],
+            definition_version=DEFS["ghost_recovery_rate"],
+            computation_sql="recovered_users / ghosted_users",
+            as_of=_now(),
+            breakdowns={},
+        )
+    overlap = ghosted & recovered
+    rate = len(overlap) / len(ghosted)
+    confidence = min(0.95, 0.4 + 0.001 * len(ghosted))
+    interp = (
+        f"{len(overlap):,} of {len(ghosted):,} ghosted users have been re-engaged via "
+        f"CS intervention. Recovery rate = {rate:.1%}. "
+        f"Low rate = the CS agent's queue is filling faster than approvals drain it; "
+        f"high rate = the sim<->CS loop is closing tight."
+    )
+    trace = [
+        f"ghost_recovery_rate = {rate:.4f} because {len(overlap)} of {len(ghosted)} ghosted users have a matching user_reengaged event.",
+        f"the gap is the CS backlog: {len(ghosted) - len(overlap)} ghosted users still awaiting an approved intervention.",
+        f"confidence = {confidence:.2f} because the count is deterministic but the metric stabilises with more ghost/recover cycles.",
+    ]
+    return MetricResult(
+        metric_name="ghost_recovery_rate",
+        value=float(rate),
+        confidence=float(confidence),
+        sample_n=len(ghosted),
+        provenance=[
+            f"ghosted:{len(ghosted)}",
+            f"recovered:{len(overlap)}",
+            f"backlog:{len(ghosted) - len(overlap)}",
+        ],
+        window_open=False,
+        interpretation=interp,
+        trace=trace,
+        definition_version=DEFS["ghost_recovery_rate"],
+        computation_sql=sql_ghost.strip(),
+        as_of=_now(),
+        breakdowns=dict(
+            ghosted=len(ghosted),
+            recovered=len(overlap),
+            backlog=len(ghosted) - len(overlap),
+        ),
     )

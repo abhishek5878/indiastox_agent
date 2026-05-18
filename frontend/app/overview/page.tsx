@@ -15,6 +15,7 @@ export default function OverviewPage() {
   const [cascadeLift, setCascadeLift] = useState<MetricResult | null>(null);
   const [influence, setInfluence] = useState<MetricResult | null>(null);
   const [disengagement, setDisengagement] = useState<MetricResult | null>(null);
+  const [recovery, setRecovery] = useState<MetricResult | null>(null);
   const [reasons, setReasons] = useState<{ reason: string; n: number }[]>([]);
 
   useEffect(() => {
@@ -27,6 +28,7 @@ export default function OverviewPage() {
     metrics.invoke("cascade_followon_lift", { week_of: "2024-W01" }).then(setCascadeLift).catch(() => {});
     metrics.invoke("gyaani_influence_index", { week_of: "2024-W01" }).then(setInfluence).catch(() => {});
     metrics.invoke("user_disengagement_rate", {}).then(setDisengagement).catch(() => {});
+    metrics.invoke("ghost_recovery_rate", {}).then(setRecovery).catch(() => {});
     sim.reasons().then(setReasons).catch(() => {});
   }, []);
 
@@ -120,7 +122,7 @@ export default function OverviewPage() {
 
       <div className="mb-5">
         <div className="text-xs font-medium tracking-widest text-[var(--muted-foreground)] uppercase mb-3">Consumer behavior</div>
-        <div className="grid grid-cols-4 gap-4 mb-4">
+        <div className="grid grid-cols-5 gap-3 mb-4">
           <ProductCard
             title="Behavioral concentration"
             valueText={concentration ? concentration.value.toFixed(2) : ""}
@@ -157,6 +159,15 @@ export default function OverviewPage() {
             hint={METRICS.user_disengagement_rate.long || METRICS.user_disengagement_rate.short}
             body={disengagement?.interpretation || "Share of users 5+ sim-days quiet. The CS agent's re-engagement target pool."}
             badge={disengagement && disengagement.value > 0.3 ? "cs target pool" : null}
+            tone="info"
+          />
+          <ProductCard
+            title="Ghost recovery"
+            valueText={recovery ? `${(recovery.value * 100).toFixed(1)}%` : ""}
+            subtitle={recovery ? `${((recovery.breakdowns as any)?.recovered || 0).toLocaleString()} recovered · ${((recovery.breakdowns as any)?.backlog || 0).toLocaleString()} backlog` : "no recoveries yet"}
+            hint={METRICS.ghost_recovery_rate.long || METRICS.ghost_recovery_rate.short}
+            body={recovery?.interpretation || "Share of ghosted users brought back via an approved CS intervention. Closes the sim<->CS loop."}
+            badge={recovery && recovery.value > 0.10 ? "loop closing" : recovery && recovery.value > 0 ? "loop active" : null}
             tone="info"
           />
         </div>

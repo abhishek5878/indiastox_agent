@@ -109,8 +109,13 @@ export const METRICS: Record<string, GlossaryEntry> = {
   },
   user_disengagement_rate: {
     label: "Disengagement rate",
-    short: "Share of users 5+ sim-days quiet — the CS agent's re-engagement target pool.",
+    short: "Share of users 5+ sim-days quiet, the CS agent's re-engagement target pool.",
     long: "Each `user_ghosted` sim_event marks a user transitioning from active to disengaged. They're removed from the candidate pool until the CS re-engagement loop (sim.world.reengage_user) clears the flag. This metric is the cohort-level read: the input the CS agent prioritizes interventions against. Closes the loop between the sim and the CS surface.",
+  },
+  ghost_recovery_rate: {
+    label: "Ghost recovery rate",
+    short: "Share of ghosted users who were re-engaged via an approved CS intervention.",
+    long: "Counts unique users with a `user_reengaged` sim_event over unique users with a `user_ghosted` event. Approving an intervention on /cs calls sim.world.reengage_user(user_id), which removes the user from the ghosted set and emits the recovery event. High rate means the sim<->CS loop is closing tight; low rate means the queue is filling faster than approvals drain it.",
   },
 };
 

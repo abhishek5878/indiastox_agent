@@ -64,6 +64,18 @@ def act(user_id: str, action: Literal["approve", "reject"]):
     dst = dst_dir / src.name
     src.replace(dst)
 
+    # Close the sim<->CS loop: an approved intervention re-engages the user
+    # in the Living World so they re-enter the candidate pool. Emits a
+    # `user_reengaged` sim_event for the timeline.
+    reengaged = False
+    if action == "approve":
+        try:
+            from api.routes.sim import _world  # avoid circular import at module load
+            from sim.world import reengage_user
+            reengaged = reengage_user(_world, user_id)
+        except Exception:
+            reengaged = False
+
     if WAREHOUSE.exists():
         con = duckdb.connect(str(WAREHOUSE), read_only=False)
         try:
@@ -77,12 +89,41 @@ def act(user_id: str, action: Literal["approve", "reject"]):
                     datetime.now(timezone.utc).replace(tzinfo=None),
                     "api-human",
                     f"intervention_{target}",
-                    json.dumps({"user_id": user_id}),
+                    json.dumps({"user_id": user_id, "sim_reengaged": reengaged}),
                     "human-decision",
                     1.0,
                     "api.interventions",
                 ],
             )
+            if reengaged:
+                # Best-effort: log a sim_event so the Living World timeline
+                # shows the recovery. Mirrors sim.world._log_event shape.
+                try:
+                    from api.routes.sim import _world as _w_for_ts
+                    sim_ts = _w_for_ts.sim_now
+                except Exception:
+                    sim_ts = datetime.now(timezone.utc).replace(tzinfo=None)
+                con.execute(
+                    """CREATE TABLE IF NOT EXISTS sim_events (
+                         event_id TEXT PRIMARY KEY, sim_ts TIMESTAMP NOT NULL,
+                         wall_ts TIMESTAMP NOT NULL, kind TEXT NOT NULL,
+                         actor TEXT, payload JSON, lens TEXT
+                       )"""
+                )
+                con.execute(
+                    """INSERT INTO sim_events
+                       (event_id, sim_ts, wall_ts, kind, actor, payload, lens)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    [
+                        f"evt-{uuid.uuid4().hex[:16]}",
+                        sim_ts,
+                        datetime.now(timezone.utc).replace(tzinfo=None),
+                        "user_reengaged",
+                        user_id,
+                        json.dumps({"by": "cs_intervention", "intervention_id": user_id}),
+                        "cs",
+                    ],
+                )
         finally:
             con.close()
-    return dict(user_id=user_id, new_status=target)
+    return dict(user_id=user_id, new_status=target, sim_reengaged=reengaged)
