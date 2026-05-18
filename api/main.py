@@ -49,6 +49,35 @@ app.include_router(audit_routes.router)
 app.include_router(llm_routes.router)
 
 
+@app.on_event("startup")
+def _scrub_sim_state_on_boot() -> None:
+    """Wipe any sim.world rows left in the warehouse so the demo boots clean.
+
+    The warehouse ships baked into the Docker image; if the build snapshot
+    contains rows from a previous local run, the deterministic tick seeds will
+    collide on the very first /api/sim/tick. Scrubbing on startup also means
+    every Render cold-start gives a fresh world.
+    """
+    from api.deps import WAREHOUSE
+    if not WAREHOUSE.exists():
+        return
+    import duckdb
+    con = duckdb.connect(str(WAREHOUSE), read_only=False)
+    try:
+        for sql in [
+            "DELETE FROM sim_events",
+            "DELETE FROM fact_prediction WHERE _source_system = 'sim.world'",
+            "DELETE FROM fact_acquisition WHERE _source_system = 'sim.world'",
+            "DELETE FROM dim_user WHERE _source_system = 'sim.world'",
+        ]:
+            try:
+                con.execute(sql)
+            except duckdb.CatalogException:
+                pass
+    finally:
+        con.close()
+
+
 @app.get("/api/health")
 def health():
     return dict(ok=True, service="indiastox-api", version="1.0.0")
