@@ -39,6 +39,12 @@ critique:
 verify:
 	python3 verify_failure_modes.py
 
+audit:
+	python3 -m agent.audit_summary $(ARGS)
+
+llm-demo:
+	python3 -m agent.llm_growth_agent $(ARGS)
+
 cs-run:
 	python3 agent/cs_agent.py
 
