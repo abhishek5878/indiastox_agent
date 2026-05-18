@@ -173,3 +173,19 @@ questions:
     tolerance: null
     calibration_markers: ["Insufficient data", "wide"]
     action_markers: ["4 weeks", "incrementality"]
+
+  - id: Q11
+    # Q11 is genuinely hard. Unlike Q10 (which is unknowable because the
+    # future hasn't happened), this is unknowable for a SUBTLER reason —
+    # the comparison agent would need to (a) simulate a TrueSkill update
+    # against the historical match stream, (b) re-run the resolver + skill
+    # estimator under TrueSkill, (c) extrapolate to W04 retention. The
+    # honest answer is "none of those three steps are buildable from one
+    # week of data; propose a parallel-shadow run." The agent should
+    # acknowledge the chain of missing pieces, not just say "wide CI".
+    text: "If we replaced Glicko-2 with TrueSkill for the skill estimator, what would happen to weekly_active_posters in W04?"
+    ground_truth_sql: null
+    ground_truth_kind: "unknowable_chain_of_inferences"
+    tolerance: null
+    calibration_markers: ["TrueSkill", "extrapolat"]
+    action_markers: ["parallel", "shadow"]

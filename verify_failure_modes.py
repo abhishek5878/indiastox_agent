@@ -29,7 +29,7 @@ if str(REPO) not in sys.path:
 
 def check_1_determinism() -> bool:
     """Run identity/resolve.py twice. Output (edges.duckdb digest) must be identical."""
-    print("\n[1/10] DETERMINISM")
+    print("\n[1/11] DETERMINISM")
     digests = []
     for i in range(2):
         # Re-run resolution.
@@ -58,7 +58,7 @@ def check_2_defined_once() -> bool:
     A file is SUSPECT if it mentions `ghost_rate` AND contains SQL arithmetic
     AND does NOT import the metric function.
     """
-    print("\n[2/10] DEFINED-ONCE RULE")
+    print("\n[2/11] DEFINED-ONCE RULE")
     needle = "ghost_rate"
     arithmetic_tokens = ["COUNT(", "SUM(", "AVG(", "median("]
     import_marker = "from metrics.definitions import"
@@ -137,7 +137,7 @@ def check_2_defined_once() -> bool:
 
 def check_3_deferred_join() -> bool:
     """Earliest resolved_at >= earliest made_at + 4 days."""
-    print("\n[3/10] DEFERRED JOIN")
+    print("\n[3/11] DEFERRED JOIN")
     # Read backend events for prediction_made min timestamp.
     earliest_made = None
     with (RAW / "backend_events.ndjson").open() as f:
@@ -179,7 +179,7 @@ def check_4_shared_device_blocks() -> bool:
     edge. The expected count is 170 (85 pairs after adding the 15% dark
     channel — was 200 / 100 pairs pre-dark).
     """
-    print("\n[4/10] SHARED-DEVICE ANTI-MERGE")
+    print("\n[4/11] SHARED-DEVICE ANTI-MERGE")
     personas = pd.read_parquet(REPO / "data" / "personas.parquet")
     shared = personas[personas["identity_pattern"].str.startswith("shared_device:")]
     n_shared = len(shared)
@@ -230,7 +230,7 @@ def check_5_confidence_distribution() -> bool:
     identity_confidence_summary penalty is gone or the windowing logic
     isn't firing — both silent failures.
     """
-    print("\n[5/10] CONFIDENCE-PROPAGATION SANITY")
+    print("\n[5/11] CONFIDENCE-PROPAGATION SANITY")
     if str(REPO) not in sys.path:
         sys.path.insert(0, str(REPO))
     from metrics.definitions import (
@@ -275,11 +275,15 @@ def check_5_confidence_distribution() -> bool:
     return ok
 
 
+FM6_MAX_SCORE = 33  # was 30 before Q11; recalibrated in Pass B/N2
+FM6_FAIL_THRESHOLD = 31  # build fails if eval >= this. Was 28 of 30 (93.3%); now 31 of 33 (94%).
+
+
 def check_6_eval_not_too_easy() -> bool:
     """Agent must NOT score >= 28/30 on the eval. If it does, questions are
     too easy or ground truths are wrong.
     """
-    print("\n[6/10] EVAL DIFFICULTY (FM6)")
+    print("\n[6/11] EVAL DIFFICULTY (FM6)")
     if not EVAL_RESULTS.exists():
         print(f"  FAIL: no eval results in {EVAL_RESULTS} — run `make eval` first.")
         return False
@@ -291,12 +295,13 @@ def check_6_eval_not_too_easy() -> bool:
     payload = json.loads(latest.read_text())
     score = payload["total_score"]
     mx = payload["max_total"]
-    threshold = 28  # >= 28/30 means too easy
-    print(f"  latest run: {latest.name}  score: {score}/{mx}")
-    # Q10 should not be 3/3 — it's genuinely hard.
-    q10 = next((r for r in payload["results"] if r["id"] == "Q10"), None)
-    if q10:
-        print(f"  Q10 (counterfactual lift): {q10['scores']}")
+    threshold = FM6_FAIL_THRESHOLD  # recalibrated for 33-q suite; see constants at top
+    print(f"  latest run: {latest.name}  score: {score}/{mx}  (threshold: <{threshold}/{FM6_MAX_SCORE})")
+    # Q10 / Q11 should not be 3/3 — they're genuinely hard.
+    for qid in ("Q10", "Q11"):
+        q = next((r for r in payload["results"] if r["id"] == qid), None)
+        if q:
+            print(f"  {qid}: {q['scores']}")
     ok = score < threshold
     print(f"  result: {'PASS' if ok else f'FAIL — agent scored {score}/{mx}, questions too easy or GT wrong'}")
     return ok
@@ -309,7 +314,7 @@ def check_7_proposal_pipeline_end_to_end() -> bool:
       - agent_actions row with downstream_proposal_id set
       - approve flow moves to proposals/approved/ AND updates status
     """
-    print("\n[7/10] PROPOSAL PIPELINE END-TO-END")
+    print("\n[7/11] PROPOSAL PIPELINE END-TO-END")
     # 1. Run experiment_loop fresh. If a pending proposal already exists,
     #    the loop just adds another — fine; we'll pick the newest.
     r = subprocess.run(["python3", "-m", "bonus.experiment_loop"], capture_output=True, text=True, cwd=str(REPO))
@@ -407,7 +412,7 @@ def check_8_cs_interventions_grounded() -> bool:
     `intervention_text` mentions a ticker that also appears in
     `grounding_facts` (specifically the called_tickers list).
     """
-    print("\n[8/10] CS INTERVENTIONS GROUNDED IN REAL DATA")
+    print("\n[8/11] CS INTERVENTIONS GROUNDED IN REAL DATA")
     import yaml as _yaml
 
     pending = REPO / "interventions" / "pending"
@@ -446,7 +451,7 @@ def check_9_reproduce_detects_drift() -> bool:
     has changed since the proposal was logged. We simulate drift via the
     `--force-stale-hash-for` flag rather than actually editing source.
     """
-    print("\n[9/10] REPRODUCE DETECTS DEFINITION DRIFT")
+    print("\n[9/11] REPRODUCE DETECTS DEFINITION DRIFT")
     # Find a proposal that exists in DuckDB (not just an orphaned YAML).
     con = duckdb.connect(str(WAREHOUSE), read_only=True)
     try:
@@ -491,7 +496,7 @@ def check_10_position_paper_evidence_based() -> bool:
     wrote opinion not analysis". A real evidence-based paper will be in the
     50–150 range; we set 20 as the floor.
     """
-    print("\n[10/10] POSITION PAPER IS EVIDENCE-BASED")
+    print("\n[10/11] POSITION PAPER IS EVIDENCE-BASED")
     paper = REPO / "POSITION_PAPER.md"
     if not paper.exists():
         print("  FAIL: POSITION_PAPER.md missing — run `make position-paper`")
@@ -510,6 +515,39 @@ def check_10_position_paper_evidence_based() -> bool:
     return ok
 
 
+def check_11_data_quality_surfaced() -> bool:
+    """At least one audit_log row must flag the known-injected Klaviyo
+    clock-skew. If the pipeline silently accepted the bad data, this fails.
+
+    The brief calls out "data quality issue the pipeline must flag, not
+    silently accept" as an explicit failure mode. We deliberately inject
+    5% clock-skew rows in `generate.py:gen_klaviyo`; if the scan never
+    runs (or never lands an audit row), the substrate is failing the
+    brief's contract.
+    """
+    print("\n[11/11] DATA-QUALITY FLAGGED (FM11)")
+    if not WAREHOUSE.exists():
+        print("  FAIL: warehouse not built")
+        return False
+    con = duckdb.connect(str(WAREHOUSE), read_only=True)
+    try:
+        rows = con.execute(
+            """SELECT run_id, notes FROM audit_log
+               WHERE pipeline_stage = 'data_quality'
+                 AND notes LIKE '%clock_skew%'
+               ORDER BY run_at DESC LIMIT 3"""
+        ).fetchall()
+    finally:
+        con.close()
+    if not rows:
+        print("  FAIL: no audit_log rows flag the injected clock_skew. Run `make data-quality`.")
+        return False
+    print(f"  found {len(rows)} clock_skew audit row(s); latest:")
+    print(f"    {rows[0][0]}  {rows[0][1]}")
+    print(f"  result: PASS")
+    return True
+
+
 def main() -> None:
     results = [
         check_1_determinism(),
@@ -522,6 +560,7 @@ def main() -> None:
         check_8_cs_interventions_grounded(),
         check_9_reproduce_detects_drift(),
         check_10_position_paper_evidence_based(),
+        check_11_data_quality_surfaced(),
     ]
     print("\n=========================================")
     print(f"Failure-mode checks: {sum(results)}/{len(results)} PASS")

@@ -69,6 +69,7 @@ class GrowthAgent:
             "Q08": self._q08,
             "Q09": self._q09,
             "Q10": self._q10,
+            "Q11": self._q11,
         }
 
     # ---------- helpers ----------
@@ -220,6 +221,32 @@ class GrowthAgent:
             f"Next step: deep-link UTM passthrough on WhatsApp shares to reduce dark fraction."
         )
         return AgentAnswer("Q09", q, r.value, None, cal, action, [r, cac])
+
+    def _q11(self, q: str) -> AgentAnswer:
+        # The "chain of inferences" question. A rule-based router doesn't
+        # have semantic knowledge of TrueSkill, parallel-shadow runs, or
+        # the validity chain of cross-estimator extrapolation. The honest
+        # answer is "no tool maps to this; refuse to estimate."
+        #
+        # This question's role in the eval is to surface that limit. The
+        # YAML markers ("TrueSkill", "extrapolat", "parallel", "shadow")
+        # require domain reasoning the rule-based agent doesn't have. An
+        # LLM-driven agent (Pass D) SHOULD be able to address those —
+        # which is exactly the difference Q11 will then measure.
+        skill = self.session.call("get_skill_distribution", channel=None)
+        cal = (
+            f"No tool in the substrate maps to a different estimator. "
+            f"Current Glicko-2 mean mu = {skill.value:.0f} over {skill.sample_n} "
+            f"users; insufficient data to project an alternate-estimator effect "
+            f"on W04 weekly_active_posters from one week of matches. confidence "
+            f"in any point estimate < 0.10."
+        )
+        action = (
+            "Refuse to estimate. The substrate's current tools answer "
+            "questions about the current estimator's outputs, not the "
+            "counterfactual outputs of a different estimator."
+        )
+        return AgentAnswer("Q11", q, None, None, cal, action, [skill])
 
     def _q10(self, q: str) -> AgentAnswer:
         # The hard question. We have ONE week of data. The honest answer is

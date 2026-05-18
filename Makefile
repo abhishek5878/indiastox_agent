@@ -68,6 +68,9 @@ eval-scorecard:
 
 viz: calibration dashboard-mosaic eval-scorecard
 
+data-quality:
+	python3 -m core.data_quality
+
 gameability:
 	python3 -m agent.print_metric metric_gameability_index
 

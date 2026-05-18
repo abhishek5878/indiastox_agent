@@ -610,6 +610,13 @@ def load_warehouse(
     con.close()
     from core.version_registry import register_all
     register_all()
+    # Layer N3 — data-quality scan against the raw + warehouse state.
+    # Writes audit_log rows for clock_skew, future_dated_events, orphan_clicks.
+    try:
+        from core.data_quality import scan_and_audit
+        scan_and_audit(verbose=False)
+    except Exception as e:
+        print(f"WARN: data-quality scan failed: {e}", file=sys.stderr)
     con = duckdb.connect(str(WAREHOUSE_DB), read_only=False)
 
     # audit_log

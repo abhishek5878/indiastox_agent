@@ -50,13 +50,27 @@ def _connect(read_only: bool = True):
 
 
 def _week_bounds(week_of: str) -> tuple[datetime, datetime]:
+    """ISO-week → naive (TZ-stripped) UTC datetimes.
+
+    DuckDB binds tz-aware Python datetimes by converting to the system's
+    local timezone before stripping tz when comparing against a naive
+    TIMESTAMP column. On a machine in IST that adds +5:30 to the
+    boundary and quietly leaks late-day events from the next week into
+    the query. Returning naive datetimes — values numerically in UTC —
+    keeps the parameter comparison aligned with the column values
+    (which were also stored naive-UTC by `_parse_dt` in resolve.py).
+    Fixes the Q03/Q04 1pp drift surfaced by the eval harness (Pass B / N2).
+    """
     year, week = week_of.split("-W")
-    monday = datetime.strptime(f"{int(year)}-W{int(week):02d}-1", "%G-W%V-%u").replace(tzinfo=timezone.utc)
+    monday = datetime.strptime(f"{int(year)}-W{int(week):02d}-1", "%G-W%V-%u")
     return monday, monday + timedelta(days=7)
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    """Naive UTC. Matches the convention `_week_bounds` returns so
+    `now >= cutoff` comparisons stay consistent.
+    """
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def _window_penalty(window_open: bool) -> float:

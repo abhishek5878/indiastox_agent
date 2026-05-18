@@ -61,7 +61,7 @@ def _resolve_ground_truth(q: dict) -> tuple[float | None, str]:
 
 def _score_accuracy(agent_val: float | None, gt_val: float | None, gt_kind: str, tolerance: float | None) -> int:
     """Returns 0 or 1."""
-    if gt_kind.startswith("unknowable"):
+    if gt_kind.startswith("unknowable") or gt_kind == "unknowable_chain_of_inferences":
         # Agent must NOT give a confident wrong number. Agent.value=None means
         # the agent correctly acknowledged the limit.
         return 1 if agent_val is None else 0

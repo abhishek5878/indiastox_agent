@@ -1,17 +1,20 @@
 """Glicko-2 skill estimator over closed prediction outcomes.
 
 Treats every prediction as a match: user vs. market. WIN = 1, LOSS = 0,
-DRAW = 0.5. The market opponent has a fixed rating of 1500 with low RD
-(the market sees all info; users are testing themselves against it).
+DRAW = 0.5.
 
-Reference: Glickman, M.E. (2012). Example of the Glicko-2 System.
-http://www.glicko.net/glicko/glicko2.pdf
+Faithful implementation of Glickman, M.E. (2012). *Example of the Glicko-2
+System.* http://www.glicko.net/glicko/glicko2.pdf — including the Step 5
+volatility update via the Illinois iterative method (Eq. 12). Verified
+against the paper's worked example in metrics/test_skill_glicko_paper.py
+(see Pass B / N7).
 
-For the prototype we use the standard formulas, with one simplification:
-volatility (sigma) is held constant at the initial value rather than
-iteratively updated each rating period. The full iterative step (Eq. 12 in
-the paper) would add complexity for marginal gain on a 1-week window;
-flag for v2.
+The market opponent is rated 1500 with RD=150 — moderate informativeness.
+The earlier prototype used MARKET_RD=50 which over-shrunk user phi
+(forcing phi < 200 after only a handful of matches and making the
+brief's `phi > 300` at-risk threshold unreachable). MARKET_RD=150
+gives the brief's threshold meaning: users with < ~3 closed outcomes
+stay above 300, surfacing as the actual at-risk cohort.
 """
 from __future__ import annotations
 
@@ -43,10 +46,21 @@ INIT_VOL = 0.06
 # Glicko-2 scaling.
 GLICKO_SCALE = 173.7178
 
-# Market opponent: very stable rating, very low RD (the market is a
-# well-calibrated baseline of all-information).
+# System parameter τ — controls volatility update step size.
+# Glickman recommends 0.3 to 1.2; 0.5 is a common default for moderately
+# variable populations (predictions on liquid Indian stocks).
+TAU = 0.5
+
+# Convergence tolerance for the Illinois iteration in Step 5.
+EPSILON = 1e-6
+
+# Market opponent: rated 1500, RD 150 (moderate informativeness).
+# Pre-N7 used RD=50 which forced user phi below 200 after a handful of
+# matches and stranded the brief's `phi > 300` at-risk threshold. RD=150
+# is the calibrated value at which W01 produces a phi distribution where
+# the brief's threshold catches the right cohort.
 MARKET_RATING = 1500.0
-MARKET_RD = 50.0
+MARKET_RD = 150.0
 
 
 @dataclass
@@ -67,6 +81,57 @@ def _g(phi: float) -> float:
 
 def _E(mu: float, mu_j: float, phi_j: float) -> float:
     return 1.0 / (1.0 + math.exp(-_g(phi_j) * (mu - mu_j)))
+
+
+def _update_volatility(sigma: float, delta: float, phi: float, v: float, *,
+                        tau: float = TAU, epsilon: float = EPSILON) -> float:
+    """Glickman 2012 Step 5 — Illinois iterative method for new sigma.
+
+    Solves f(x) = 0 where
+        f(x) = exp(x) * (delta^2 - phi^2 - v - exp(x))
+               / (2 * (phi^2 + v + exp(x))^2)
+               - (x - a) / tau^2
+    with a = ln(sigma^2). Returns sigma' = exp(x/2).
+
+    Verified against Glickman's worked example
+    (rating=1500, RD=200, vol=0.06; matches against 1400/1550/1700 with
+    scores 1/0/0; tau=0.5; expected new vol ≈ 0.05999).
+    """
+    a = math.log(sigma * sigma)
+    tau_sq = tau * tau
+
+    def f(x: float) -> float:
+        ex = math.exp(x)
+        denom = 2.0 * (phi * phi + v + ex) ** 2
+        return (ex * (delta * delta - phi * phi - v - ex)) / denom - (x - a) / tau_sq
+
+    # Find initial bracket [A, B] with f(A) and f(B) of opposite sign.
+    A = a
+    fA = f(A)
+    if delta * delta > phi * phi + v:
+        B = math.log(delta * delta - phi * phi - v)
+    else:
+        k = 1
+        while f(a - k * tau) < 0:
+            k += 1
+            if k > 100:  # safety; should never fire
+                break
+        B = a - k * tau
+    fB = f(B)
+
+    # Illinois iteration.
+    iterations = 0
+    while abs(B - A) > epsilon and iterations < 100:
+        C = A + (A - B) * fA / (fB - fA)
+        fC = f(C)
+        if fC * fB <= 0:
+            A, fA = B, fB
+        else:
+            fA = fA / 2.0
+        B, fB = C, fC
+        iterations += 1
+
+    return math.exp(A / 2.0)
 
 
 def update_glicko2(prior: GlickoRating, matches: list[tuple[float, float, float]]) -> GlickoRating:
@@ -102,8 +167,10 @@ def update_glicko2(prior: GlickoRating, matches: list[tuple[float, float, float]
         delta_sum += g_phi_j * (score - _E(mu, mu_j, phi_j))
     delta = v * delta_sum
 
-    # Step 5 (volatility iterative update) — SKIPPED for prototype; sigma held constant.
-    sigma = prior.vol
+    # Step 5: iterative volatility update via Glickman's Illinois method.
+    # We solve f(x) = 0 for x where f is defined in Eq. 11 of the paper,
+    # then set sigma' = exp(x / 2).
+    sigma = _update_volatility(prior.vol, delta, phi, v)
 
     # Step 6: pre-rating-period phi*.
     phi_star = math.sqrt(phi * phi + sigma * sigma)
