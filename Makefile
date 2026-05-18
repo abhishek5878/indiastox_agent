@@ -54,6 +54,15 @@ baseline:
 baseline-restore:
 	python3 -m sim.baseline --restore
 
+api:
+	python3 -m uvicorn api.main:app --reload --host 127.0.0.1 --port 8000
+
+ui-next:
+	cd frontend && bun run dev
+
+ui-build:
+	cd frontend && bun run build
+
 cs-run:
 	python3 agent/cs_agent.py
 

@@ -43,6 +43,7 @@ raw/*.csv
 raw/*.ndjson
 identity/edges.duckdb
 warehouse/indiastox.duckdb
+warehouse/indiastox.baseline.duckdb
 bonus/proposals/
 bonus/notion/
 metabase_data/
@@ -66,3 +67,10 @@ data/proposed_improvements.json
 .pytest_cache/
 __pycache__/
 *.pyc
+
+# Next.js frontend build output
+frontend/.next/
+frontend/out/
+
+# Unrelated drafts
+Fewwords Pitch Deck *.html

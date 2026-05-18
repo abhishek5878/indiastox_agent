@@ -148,7 +148,25 @@ class ToolSession:
     def _log_action(self, tool_name: str, args: dict, result: MetricResult, downstream_proposal_id: Optional[str]) -> None:
         if not WAREHOUSE_DB.exists():
             return  # don't fail tool calls when warehouse is missing — just skip audit
-        con = duckdb.connect(str(WAREHOUSE_DB), read_only=False)
+        # DuckDB rejects mixing read-only and read-write connections to the
+        # same file inside one process. In the UI, a cached read-only
+        # connection is open for fast dataframe reads; when ToolSession
+        # tries to open a writer to audit-log, it conflicts. Gracefully
+        # skip the audit write in that case — the tool call's result is
+        # still returned to the caller. Other failure modes (e.g.
+        # warehouse temporarily locked by a sibling process) also fall
+        # through here without breaking the metric call.
+        try:
+            con = duckdb.connect(str(WAREHOUSE_DB), read_only=False)
+        except (duckdb.ConnectionException, duckdb.IOException, Exception) as e:
+            # Emit one terse note so the audit gap is visible in dev logs
+            # without spamming on every tool call.
+            if not getattr(self, "_audit_warned", False):
+                print(f"WARN(mcp.tools): audit-log writes disabled this session "
+                      f"({type(e).__name__}: {e}). Tool calls still return "
+                      f"normally; agent_actions rows skipped.", file=sys.stderr)
+                self._audit_warned = True  # type: ignore[attr-defined]
+            return
         try:
             con.execute(
                 """INSERT INTO agent_actions
