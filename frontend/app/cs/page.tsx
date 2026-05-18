@@ -20,7 +20,7 @@ export default function CSPage() {
     <div className="px-8 py-7 max-w-[1400px] mx-auto">
       <header className="mb-6">
         <div className="text-xs font-medium tracking-widest text-[var(--muted-foreground)] uppercase">CS interventions</div>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight">10 at-risk users, ten personalised nudges</h1>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight">The CS agent drafts the nudge. You approve the send.</h1>
         <p className="mt-1 text-sm text-[var(--muted-foreground)] max-w-2xl">
           Same metric layer, identity graph, audit trail — different agent archetype. Each card grounded in the user's actual tickers and prediction history.
         </p>

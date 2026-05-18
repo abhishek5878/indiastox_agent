@@ -1,0 +1,111 @@
+// Glossary of jargon a first-time visitor will see.
+// Used by Tooltip + HintIcon to make every technical term hoverable.
+
+export interface GlossaryEntry {
+  label: string;     // human-readable label, used in place of the raw key
+  short: string;     // 1-line description shown inline
+  long?: string;     // optional longer explanation in the tooltip
+}
+
+export const CONFOUNDERS: Record<string, GlossaryEntry> = {
+  klaviyo_deliverability_drop: {
+    label: "Klaviyo delivery integrity",
+    short: "Are open events arriving before send events?",
+    long: "Scans email-pairs in raw.klaviyo_events for opened_at < sent_at. If >1% of pairs are inverted, downstream lift attributed to email may be measuring clock drift, not engagement.",
+  },
+  prediction_market_noise_floor: {
+    label: "Noise-floor proximity",
+    short: "Are predictions only marginally better than random?",
+    long: "Compares brier_score against the random-guess baseline of 0.25. If the substrate is near the floor, any channel intervention is fitting noise.",
+  },
+  identity_resolution_drift: {
+    label: "Identity-graph drift",
+    short: "Did the join logic change since this proposal was scored?",
+    long: "Checks metric_gameability_index — the hash of every metric definition + source table version. If a definition changed mid-experiment, the headline number is comparing apples to a different apple.",
+  },
+  dark_channel_dominance: {
+    label: "Dark-channel floor",
+    short: "How much CAC is unknowable by construction?",
+    long: "dark_channel_fraction counts users whose first touchpoint is WhatsApp forwards / IRL screenshots — no UTM, no attribution. Any attribution-side proposal is bounded by this floor.",
+  },
+  exam_season_seasonality: {
+    label: "Exam-season effect",
+    short: "Is this lift just a calendar artifact?",
+    long: "Cross-checks the proposed effect against historical exam-season cohorts. If signups always dip in Jan, attributing a Jan dip to a channel change is confounded.",
+  },
+};
+
+export const METRICS: Record<string, GlossaryEntry> = {
+  ghost_rate: {
+    label: "Ghost rate",
+    short: "Fraction of users who sign up and make zero predictions.",
+    long: "Computed weekly per acquisition_source. The cohort is closed at sign-up; the metric carries a typed confidence score that reflects sample size + completeness of the join.",
+  },
+  ghost_rate_unstop: {
+    label: "Ghost rate · Unstop",
+    short: "Unstop-cohort fraction that signs up and never predicts.",
+  },
+  brier_score: {
+    label: "Brier score",
+    short: "Probabilistic accuracy. Lower is better. Random = 0.25.",
+    long: "Mean squared error between predicted confidence stars (rescaled to probability) and actual outcomes. The agent's eval also asks for the calibration *string* alongside the number — see /eval.",
+  },
+  dark_channel_fraction: {
+    label: "Dark-channel fraction",
+    short: "Share of users with no attributable touchpoint.",
+    long: "Hard floor on what attribution can measure. Any CAC analysis must surface this fraction alongside the answer.",
+  },
+  metric_gameability_index: {
+    label: "Gameability index",
+    short: "Three-axis watchdog over the metric layer itself.",
+    long: "Tracks definition_hash_drift (did the SQL change?), source_table_drift (did dim_user gain rows?), value_outlier_drift (is the number anomalously far from its 30-day baseline?). Treat any nonzero value as load-bearing.",
+  },
+  time_to_first_action: {
+    label: "Time to first action",
+    short: "Median minutes from signup to first prediction.",
+  },
+  weekly_active_posters: {
+    label: "Weekly active posters",
+    short: "Users who posted at least one prediction in the 7-day window.",
+  },
+  unstop_to_participation_rate: {
+    label: "Unstop → participation",
+    short: "Fraction of Unstop signups that participate in any challenge.",
+  },
+  channel_cac_bounds: {
+    label: "Channel CAC bounds",
+    short: "CAC interval per channel, widened by dark-channel fraction.",
+    long: "Returns lower + upper estimate. Lower bound assumes the dark fraction was acquired via the cheapest channel; upper assumes the most expensive. The interval is the headline.",
+  },
+};
+
+export const TERMS: Record<string, GlossaryEntry> = {
+  confidence: {
+    label: "Identity confidence",
+    short: "A number from 0–1, never a yes/no.",
+    long: "Every user-touchpoint match in the substrate carries a typed score + provenance. Downstream metrics that join on identity inherit the floor confidence.",
+  },
+  tool_call: {
+    label: "Tool call",
+    short: "Every metric is exposed as a function the agent can invoke.",
+    long: "All numbers — dashboard tiles, agent answers, CS interventions — flow through the same audit-logged ToolSession. There is no separate \"query for the dashboard.\"",
+  },
+  critic: {
+    label: "Critic Agent v2.0.0",
+    short: "Runs the 5 confounder checks against live data before any proposal is approved.",
+    long: "Each confounder is a tool call that returns a real number. If the number crosses a threshold (e.g., dark_channel_fraction > 15%), the confounder fires and gets attached to the proposal's critique payload.",
+  },
+  audit_log: {
+    label: "Audit log",
+    short: "Every tool call lands in agent_actions — append-only.",
+    long: "Same stream whether the caller is the Living World sim, the LLM growth agent, the CS agent, or the human dashboard. The /audit page is a degraded read of this stream.",
+  },
+};
+
+export function humanizeConfounder(name: string): string {
+  return CONFOUNDERS[name]?.label || name.replace(/_/g, " ");
+}
+
+export function humanizeMetric(name: string): string {
+  return METRICS[name]?.label || name.replace(/_/g, " ");
+}

@@ -109,6 +109,58 @@ export function Spinner({ className }: { className?: string }) {
   );
 }
 
+// ----- Tooltip -----
+// Lightweight CSS-only popover; no Radix dependency.
+export function Tooltip({ children, content, side = "top" }: {
+  children: React.ReactNode;
+  content: React.ReactNode;
+  side?: "top" | "bottom";
+}) {
+  return (
+    <span className="relative inline-flex group cursor-help">
+      {children}
+      <span
+        className={cn(
+          "pointer-events-none absolute left-1/2 -translate-x-1/2 z-50 w-[280px] rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-xs font-normal leading-snug text-[var(--foreground)] shadow-lg opacity-0 transition-opacity duration-150 group-hover:opacity-100",
+          side === "top" ? "bottom-full mb-2" : "top-full mt-2",
+        )}
+      >
+        {content}
+      </span>
+    </span>
+  );
+}
+
+// ----- Hint icon — pairs with Tooltip -----
+export function HintIcon({ content }: { content: React.ReactNode }) {
+  return (
+    <Tooltip content={content}>
+      <span className="ml-1 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full border border-[var(--border)] text-[9px] text-[var(--muted-foreground)] align-middle">?</span>
+    </Tooltip>
+  );
+}
+
+// ----- WowCallout — for hero/featured cards that need emphasis -----
+export function WowCallout({ kicker, title, children, tone = "info" }: {
+  kicker: string;
+  title: string;
+  children: React.ReactNode;
+  tone?: "info" | "warn" | "good";
+}) {
+  const toneClass = {
+    info: "border-[var(--primary)]/40 from-[var(--primary)]/10",
+    warn: "border-amber-500/40 from-amber-500/10",
+    good: "border-emerald-500/40 from-emerald-500/10",
+  }[tone];
+  return (
+    <div className={cn("rounded-lg border bg-gradient-to-b to-transparent p-5 mb-6", toneClass)}>
+      <div className="text-[10px] font-semibold tracking-widest uppercase text-[var(--muted-foreground)] mb-1">{kicker}</div>
+      <div className="text-base font-semibold mb-3">{title}</div>
+      <div>{children}</div>
+    </div>
+  );
+}
+
 // ----- KPI Tile -----
 export function KpiTile({
   label,

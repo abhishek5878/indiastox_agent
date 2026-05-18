@@ -1,7 +1,9 @@
 "use client";
 
-import { Badge, Button, Card, CardContent, CardHeader, CardTitle, KpiTile } from "@/components/ui";
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle, HintIcon, KpiTile } from "@/components/ui";
 import { Kpis, SimEvent, openSimEventsWS, sim } from "@/lib/api";
+import { METRICS, TERMS } from "@/lib/glossary";
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 const LENS_OPTIONS = [
@@ -99,13 +101,25 @@ export default function LivingWorldPage() {
           </div>
           <span className="text-xs text-[var(--muted-foreground)] mono ml-auto">{simWhenStr} · tick #{kpis?.tick_count ?? 0}</span>
         </div>
-        <h1 className="text-3xl font-semibold tracking-tight">The W01 cohort, in motion.</h1>
+        <h1 className="text-3xl font-semibold tracking-tight">A live, agent-native analytics substrate.</h1>
         <p className="mt-2 text-sm text-[var(--muted-foreground)] max-w-3xl leading-relaxed">
-          A synthetic world running on the same agent-native substrate the real product would use. Personas join,
-          predict, and ghost; outcomes resolve at T+5d; watchers fire when signals move. Switch lenses to see Growth
-          vs CS reading the same event stream.
+          Every number you see was returned by a tool — the same tool the LLM agent calls, the same tool the
+          Critic checks proposals with, the same tool the CS agent runs interventions through. Dashboards are
+          a degraded read of the substrate, not the product.
         </p>
       </header>
+
+      <div className="grid grid-cols-3 gap-3 mb-6">
+        <TourStep n={1} title="Watch the world breathe." link="#event-stream">
+          New personas join, predict, ghost. Switch lenses below to see what Growth vs CS would notice in this stream.
+        </TourStep>
+        <TourStep n={2} title="Ask the agent a real question." link="/chat">
+          Claude calls the same metric tools you see here. Every tool call is audit-logged and visible inline.
+        </TourStep>
+        <TourStep n={3} title="See the Critic block a bad idea." link="/proposals">
+          Proposals land with their counter-argument inline. 3 of 5 confounders fire against the current top proposal.
+        </TourStep>
+      </div>
 
       <div className="flex flex-wrap items-center gap-2 mb-6">
         {LENS_OPTIONS.map((opt) => (
@@ -150,8 +164,9 @@ export default function LivingWorldPage() {
                 value={`${(kpis.ghost_rate_unstop.value * 100).toFixed(1)}%`}
                 tone={kpis.ghost_rate_unstop.value > 0.3 ? "bad" : "neutral"}
                 delta={`conf ${kpis.ghost_rate_unstop.confidence.toFixed(2)} · n=${kpis.ghost_rate_unstop.sample_n}`}
+                hint={METRICS.ghost_rate.short}
               />
-              <KpiTile label="Dark fraction" value={`${(kpis.dark_fraction.value * 100).toFixed(1)}%`} hint="bounded-CAC unknown" />
+              <KpiTile label="Dark fraction" value={`${(kpis.dark_fraction.value * 100).toFixed(1)}%`} hint={METRICS.dark_channel_fraction.short} />
               <KpiTile label="New personas" value={kpis.sim_personas_new.toLocaleString()} hint="sim.world joiners" />
               <KpiTile label="Predictions · 24h" value={kpis.sim_preds_24h.toLocaleString()} hint="rolling synthetic day" />
             </>
@@ -168,9 +183,12 @@ export default function LivingWorldPage() {
         )}
       </div>
 
-      <Card>
+      <Card id="event-stream">
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-sm font-medium">Event stream</CardTitle>
+          <CardTitle className="text-sm font-medium">
+            Event stream
+            <HintIcon content={<><b>{TERMS.audit_log.label}.</b> {TERMS.audit_log.short}</>} />
+          </CardTitle>
           <div className="flex items-center gap-2">
             <Badge variant="outline" className="text-[10px]">{events.length} events</Badge>
             <Badge variant="info" className="text-[10px]">lens · {lens}</Badge>
@@ -191,6 +209,22 @@ export default function LivingWorldPage() {
       </Card>
     </div>
   );
+}
+
+function TourStep({ n, title, link, children }: { n: number; title: string; link: string; children: React.ReactNode }) {
+  const inner = (
+    <div className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-4 hover:border-[var(--primary)]/40 hover:bg-[var(--accent)]/30 transition-colors h-full">
+      <div className="flex items-start gap-2 mb-1">
+        <div className="h-5 w-5 rounded-full bg-[var(--primary)]/15 text-[var(--primary)] text-[11px] font-semibold flex items-center justify-center shrink-0">{n}</div>
+        <div className="text-sm font-medium leading-tight">{title}</div>
+      </div>
+      <div className="text-xs text-[var(--muted-foreground)] leading-relaxed mt-1.5">{children}</div>
+    </div>
+  );
+  if (link.startsWith("#")) {
+    return <a href={link}>{inner}</a>;
+  }
+  return <Link href={link}>{inner}</Link>;
 }
 
 function EventRow({ evt }: { evt: SimEvent }) {

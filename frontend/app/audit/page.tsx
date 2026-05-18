@@ -16,8 +16,8 @@ export default function AuditPage() {
     <div className="px-8 py-7 max-w-[1400px] mx-auto">
       <header className="flex items-end justify-between mb-6">
         <div>
-          <div className="text-xs font-medium tracking-widest text-[var(--muted-foreground)] uppercase">Audit</div>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight">Every tool call is here</h1>
+          <div className="text-xs font-medium tracking-widest text-[var(--muted-foreground)] uppercase">Audit trail</div>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight">Every tool call. Every agent. Append-only.</h1>
         </div>
         <div className="flex items-center gap-2 text-xs text-[var(--muted-foreground)]">
           window:
