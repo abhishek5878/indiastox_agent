@@ -60,6 +60,14 @@ position-paper:
 calibration:
 	python3 assets/calibration_curve.py
 
+dashboard-mosaic:
+	python3 assets/dashboard_mosaic.py
+
+eval-scorecard:
+	python3 assets/eval_scorecard.py
+
+viz: calibration dashboard-mosaic eval-scorecard
+
 gameability:
 	python3 -m agent.print_metric metric_gameability_index
 

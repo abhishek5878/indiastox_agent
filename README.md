@@ -106,6 +106,30 @@ data, walks the three-pass identity resolver, runs the agent against the
 canonical questions, fires the proposal pipeline pending→approved, and
 ends on the failure-mode harness.
 
+### The four panels — rendered, not described
+
+![four-panel dashboard mosaic](assets/dashboard_mosaic.png)
+
+*`make dashboard-mosaic` rebuilds this from the live warehouse. Panel 2
+(channel attribution) reads from the `metric_results` materialization;
+the other three read fact_* tables directly. Same SQL as
+[`dashboard/render_panels.py`](dashboard/render_panels.py) and the
+Metabase questions [`dashboard/seed.py`](dashboard/seed.py) creates.*
+
+### The agent's scorecard — every miss visible
+
+![agent eval scorecard 27/30](assets/eval_scorecard.png)
+
+*`make eval-scorecard` re-renders this from the latest run in
+[`eval/results/`](eval/results/). Three red cells out of thirty: Q01
+calibration markers, Q03/Q04 accuracy (a 1pp TZ-parameter drift between
+the metric function and the YAML ground-truth SQL — caught by the eval
+where code review missed it). Q10 is unknowable from one week of data;
+the agent answers "insufficient data, propose 4-week incrementality
+test" and is correctly credited 3/3. **FM6 fails the build if this
+score reaches 28/30** — a system that breaks itself when it looks too
+good is the worldview the brief is hiring for.*
+
 ## For the next maintainer
 
 This repo runs under a Claude-Code-disciplined setup: there's a
