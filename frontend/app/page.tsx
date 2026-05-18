@@ -234,12 +234,16 @@ const KIND_LABELS: Record<string, string> = {
   tick_complete: "Tick complete",
   growth_watcher_fired: "Growth watcher fired",
   cs_watcher_fired: "CS watcher fired",
+  news_cascade: "News cascade",
+  user_cooled_off: "User on cooldown",
 };
 
 function EventRow({ evt }: { evt: SimEvent }) {
   const tone =
     evt.kind === "growth_watcher_fired" ? "warning" :
     evt.kind === "cs_watcher_fired" ? "warning" :
+    evt.kind === "user_cooled_off" ? "warning" :
+    evt.kind === "news_cascade" ? "info" :
     evt.kind === "outcome_resolved" ? "success" :
     evt.kind === "persona_joined" ? "info" :
     "default";

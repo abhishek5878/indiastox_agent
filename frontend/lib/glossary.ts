@@ -77,6 +77,21 @@ export const METRICS: Record<string, GlossaryEntry> = {
     short: "CAC interval per channel, widened by dark-channel fraction.",
     long: "Returns lower + upper estimate. Lower bound assumes the dark fraction was acquired via the cheapest channel; upper assumes the most expensive. The interval is the headline.",
   },
+  call_consensus_divergence: {
+    label: "Call consensus divergence",
+    short: "Mean gap between retail BULL-share and actual BULL-win-rate per ticker.",
+    long: "For every ticker with 20+ resolved calls, compares the share of calls that were BULL against the share of BULL calls that won. The mean absolute gap across tickers tells you whether retail consensus is systematically wrong. Treat as a feed-weighting signal, not a tradeable one.",
+  },
+  ai_content_flagged_share: {
+    label: "AI-content flagged share",
+    short: "Share of analysis posts flagged by the AI-author heuristic.",
+    long: "Detector runs over user-submitted thesis posts (separate from BULL/BEAR calls) on three signals: avg word length, no-first-person + long text, and a 47-string LLM-tell phrase list. Shadow-mode until false-positive rate drops below 2.0%. The Critic uses this as a calibration input for content-policy proposals.",
+  },
+  pre_ipo_call_interest: {
+    label: "Pre-IPO call interest",
+    short: "Share of W01 calls placed on Pre-IPO tray tickers.",
+    long: "The Pre-IPO tray is a separate surface where outcomes resolve at the IPO event, not at T+5d. This metric tracks engagement with the tray (a leading indicator on which Pre-IPO names the cohort wants to bet on) and is a proxy for tray-positioning decisions.",
+  },
 };
 
 export const TERMS: Record<string, GlossaryEntry> = {

@@ -80,10 +80,102 @@ class WorldState:
     tick_count: int = 0
     last_growth_check_ghost: Optional[float] = None
     last_growth_check_at: Optional[datetime] = None
+    # Behavior state: per-user tilt/cooldown so streaks affect call rate.
+    # Keys are user_id; values are {"streak": [WIN|LOSS|...], "cooldown_until": datetime}.
+    user_state: dict = field(default_factory=dict)
 
 
 def fresh_world() -> WorldState:
     return WorldState(sim_now=SIM_T0, accel=60.0)
+
+
+# ---------------------------------------------------------------------------
+# Behavior layers
+# ---------------------------------------------------------------------------
+
+# Sector map. The IndiaStox product surfaces tickers grouped by sector;
+# users disproportionately call within sectors they understand.
+SECTOR_OF = {
+    "RELIANCE": "energy", "ONGC": "energy",
+    "TCS": "IT", "INFY": "IT", "WIPRO": "IT", "HCLTECH": "IT",
+    "HDFC": "banking", "ICICIBANK": "banking", "SBIN": "banking", "BAJFINANCE": "banking",
+    "ITC": "FMCG",
+}
+
+# Tickers flagged Pre-IPO in the product. Mirrors metrics.definitions.PRE_IPO_TICKERS.
+PRE_IPO_TICKERS = {"BAJFINANCE", "HCLTECH"}
+
+# Occupation -> preferred sectors. Students lean into IT + Pre-IPO names;
+# working professionals lean into banking + FMCG. Default is uniform.
+SECTOR_AFFINITY = {
+    "Student": ["IT", "IT", "energy", "banking"],
+    "Working Professional": ["banking", "banking", "FMCG", "IT"],
+}
+
+
+def _activity_multiplier(sim_now: datetime) -> float:
+    """Time-of-day rhythm. NSE market hours are 09:15-15:30 IST; the synthetic
+    clock is naive UTC but for the demo we read it directly as if it were the
+    user's wall-clock. Calls peak mid-session, dip at lunch, light overnight.
+    """
+    h = sim_now.hour
+    if 9 <= h < 11:
+        return 1.6   # opening surge
+    if 11 <= h < 13:
+        return 1.3   # mid-morning
+    if 13 <= h < 14:
+        return 0.8   # lunch lull
+    if 14 <= h < 16:
+        return 1.5   # close ramp
+    if 16 <= h < 20:
+        return 0.7   # post-close commentary
+    return 0.25      # overnight
+
+
+def _ticker_for_user(rng: random.Random, occupation: Optional[str]) -> str:
+    """Pick a ticker biased by occupation, with a long tail across all symbols.
+
+    70% chance the user calls within their preferred sector; 30% picks uniformly
+    from all listed tickers. Reproduces the "I only call what I think I know"
+    pattern that shows up in real retail data.
+    """
+    if rng.random() < 0.70 and occupation in SECTOR_AFFINITY:
+        sector = rng.choice(SECTOR_AFFINITY[occupation])
+        candidates = [t for t, s in SECTOR_OF.items() if s == sector]
+        if candidates:
+            return rng.choice(candidates)
+    return rng.choice(STOCK_SYMBOLS)
+
+
+def _direction_for_user(rng: random.Random, ticker: str, recent_losses: int) -> str:
+    """Retail leans BULL by default; recent losers tilt further BULL (revenge)."""
+    bull_p = 0.55 + (0.05 * min(recent_losses, 3))
+    return "BULL" if rng.random() < bull_p else "BEAR"
+
+
+def _on_cooldown(world: WorldState, user_id: str) -> bool:
+    s = world.user_state.get(user_id)
+    if not s:
+        return False
+    until = s.get("cooldown_until")
+    return until is not None and until > world.sim_now
+
+
+def _record_outcome(world: WorldState, user_id: str, outcome: str) -> None:
+    """Update the per-user streak. Three consecutive LOSSes triggers a 24h
+    cooldown; mirrors the capitulation pattern in real retail behavior.
+    """
+    s = world.user_state.setdefault(user_id, {"streak": [], "cooldown_until": None})
+    s["streak"] = (s["streak"] + [outcome])[-5:]  # keep last 5
+    if s["streak"][-3:] == ["LOSS", "LOSS", "LOSS"]:
+        s["cooldown_until"] = world.sim_now + timedelta(hours=24)
+
+
+def _recent_losses(world: WorldState, user_id: str) -> int:
+    s = world.user_state.get(user_id)
+    if not s:
+        return 0
+    return sum(1 for o in s["streak"] if o == "LOSS")
 
 
 # ---------------------------------------------------------------------------
@@ -206,12 +298,13 @@ def tick(world: WorldState, *, advance_minutes: int = 60) -> dict:
                                     name=p["full_name"], tier=p["city_tier"]),
                        lens="growth")
 
-        # ---- 2. Existing-user predictions ----
-        # Pick a random sample of active users (predicted in the last 7 sim days)
-        # and give some of them a new prediction.
+        # ---- 2. Existing-user calls ----
+        # Pick a random sample of active users (called in the last 7 sim days),
+        # then filter out anyone on cooldown. The number of calls placed this
+        # tick is scaled by the time-of-day rhythm.
         recent_cutoff = world.sim_now - timedelta(days=7)
         candidates = con.execute(
-            """SELECT du.user_id, du.true_skill
+            """SELECT du.user_id, du.true_skill, du.occupation
                FROM dim_user du
                WHERE du.true_skill IS NOT NULL
                  AND du.signup_time IS NOT NULL
@@ -223,13 +316,19 @@ def tick(world: WorldState, *, advance_minutes: int = 60) -> dict:
                ORDER BY RANDOM() LIMIT 80""",
             [world.sim_now, recent_cutoff],
         ).fetchall()
-        n_pred_target = rng_pred.randint(3, min(15, len(candidates) or 1))
-        for user_id, true_skill in candidates[:n_pred_target]:
+        # Drop cooldown users; they capitulated for the next 24h.
+        candidates = [c for c in candidates if not _on_cooldown(world, c[0])]
+        activity = _activity_multiplier(world.sim_now)
+        base_target = rng_pred.randint(3, min(15, len(candidates) or 1))
+        n_pred_target = max(1, min(len(candidates), int(round(base_target * activity))))
+
+        for user_id, true_skill, occupation in candidates[:n_pred_target]:
             ts = float(true_skill or 0.0)
             stars_base = rng_pred.choices([1, 2, 3, 4, 5], weights=[20, 25, 25, 20, 10], k=1)[0]
             stars = max(1, min(5, stars_base + max(-2, min(2, round(ts * 1.0)))))
-            symbol = rng_pred.choice(STOCK_SYMBOLS)
-            direction = rng_pred.choices(["BULL", "BEAR"], weights=[55, 45], k=1)[0]
+            symbol = _ticker_for_user(rng_pred, occupation)
+            recent_losses = _recent_losses(world, user_id)
+            direction = _direction_for_user(rng_pred, symbol, recent_losses)
             made_at = world.sim_now + timedelta(minutes=rng_pred.randint(0, max(1, advance_minutes - 1)))
             pred_id = str(uuid.UUID(int=rng_pred.getrandbits(128)))
             con.execute(
@@ -241,11 +340,52 @@ def tick(world: WorldState, *, advance_minutes: int = 60) -> dict:
                 [pred_id, user_id, symbol, direction, stars, made_at],
             )
             counters["predictions"] += 1
+            payload = dict(
+                symbol=symbol, direction=direction, stars=stars,
+                true_skill=round(ts, 2), sector=SECTOR_OF.get(symbol, "other"),
+            )
+            if symbol in PRE_IPO_TICKERS:
+                payload["pre_ipo"] = True
+            if recent_losses >= 2:
+                payload["tilt"] = f"revenge_after_{recent_losses}_losses"
             _log_event(con, world, "prediction_made",
                        actor=user_id,
-                       payload=dict(symbol=symbol, direction=direction, stars=stars,
-                                    true_skill=round(ts, 2)),
+                       payload=payload,
                        lens="product")
+
+        # ---- 2b. Sentiment cascade. Periodically a news event clusters
+        # ~6-10 calls on a single ticker within the same tick. Visible in
+        # the event stream as a `news_cascade` event followed by a
+        # cluster of `prediction_made` events on that symbol.
+        if candidates and rng_pred.random() < 0.18:
+            cascade_symbol = rng_pred.choice(STOCK_SYMBOLS)
+            cascade_dir = rng_pred.choices(["BULL", "BEAR"], weights=[60, 40], k=1)[0]
+            cascade_size = rng_pred.randint(6, 10)
+            cascade_users = [c for c in candidates if c[0] not in {
+                row[0] for row in candidates[:n_pred_target]
+            }][:cascade_size]
+            if cascade_users:
+                _log_event(con, world, "news_cascade", actor="market",
+                           payload=dict(
+                               symbol=cascade_symbol,
+                               sector=SECTOR_OF.get(cascade_symbol, "other"),
+                               direction=cascade_dir,
+                               users_affected=len(cascade_users),
+                           ),
+                           lens="product")
+                for user_id, true_skill, _occ in cascade_users:
+                    pred_id = str(uuid.UUID(int=rng_pred.getrandbits(128)))
+                    made_at = world.sim_now + timedelta(minutes=rng_pred.randint(0, max(1, advance_minutes - 1)))
+                    stars = rng_pred.choices([3, 4, 5], weights=[30, 50, 20], k=1)[0]
+                    con.execute(
+                        """INSERT INTO fact_prediction
+                           (prediction_id, user_id, stock_symbol, direction, confidence_stars,
+                            made_at, outcome, pnl_points, accuracy_delta, resolved_at,
+                            is_outcome_resolved, _source_system)
+                           VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, FALSE, 'sim.world')""",
+                        [pred_id, user_id, cascade_symbol, cascade_dir, stars, made_at],
+                    )
+                    counters["predictions"] += 1
 
         # ---- 3. Outcome resolutions ----
         # Any prediction whose made_at + 5d has passed resolves now.
@@ -276,6 +416,17 @@ def tick(world: WorldState, *, advance_minutes: int = 60) -> dict:
                  resolved_at, pred_id],
             )
             counters["resolved"] += 1
+            # Track the streak. Three consecutive LOSSes triggers a 24h cooldown
+            # for that user (capitulation behavior). Emits a `user_cooled_off`
+            # event so the CS lens can pick it up.
+            prior = world.user_state.get(user_id, {}).get("streak", [])
+            _record_outcome(world, user_id, outcome)
+            new_streak = world.user_state[user_id]["streak"]
+            if new_streak[-3:] == ["LOSS", "LOSS", "LOSS"] and prior[-3:] != ["LOSS", "LOSS", "LOSS"]:
+                _log_event(con, world, "user_cooled_off", actor=user_id,
+                           payload=dict(last_ticker=symbol, streak=new_streak[-3:],
+                                        cooldown_hours=24),
+                           lens="cs")
             if rng_out.random() < 0.3:  # log a sample, not every one
                 _log_event(con, world, "outcome_resolved",
                            actor=user_id,

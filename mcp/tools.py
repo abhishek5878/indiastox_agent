@@ -38,6 +38,9 @@ from metrics.definitions import (
     predictions_per_user as _predictions_per_user,
     email_click_to_signup as _email_click_to_signup,
     metric_gameability_index as _metric_gameability_index,
+    call_consensus_divergence as _call_consensus_divergence,
+    ai_content_flagged_share as _ai_content_flagged_share,
+    pre_ipo_call_interest as _pre_ipo_call_interest,
 )
 from metrics.skill import get_skill_distribution as _get_skill_distribution
 
@@ -108,6 +111,21 @@ def metric_gameability_index() -> MetricResult:
     return _metric_gameability_index()
 
 
+@tool_result
+def call_consensus_divergence(week_of: str = "2024-W01") -> MetricResult:
+    return _call_consensus_divergence(week_of)
+
+
+@tool_result
+def ai_content_flagged_share() -> MetricResult:
+    return _ai_content_flagged_share()
+
+
+@tool_result
+def pre_ipo_call_interest(week_of: str = "2024-W01") -> MetricResult:
+    return _pre_ipo_call_interest(week_of)
+
+
 TOOLS: dict[str, Callable[..., MetricResult]] = {
     "weekly_active_posters": weekly_active_posters,
     "time_to_first_action": time_to_first_action,
@@ -121,6 +139,9 @@ TOOLS: dict[str, Callable[..., MetricResult]] = {
     "email_click_to_signup": email_click_to_signup,
     "get_skill_distribution": get_skill_distribution,
     "metric_gameability_index": metric_gameability_index,
+    "call_consensus_divergence": call_consensus_divergence,
+    "ai_content_flagged_share": ai_content_flagged_share,
+    "pre_ipo_call_interest": pre_ipo_call_interest,
 }
 
 

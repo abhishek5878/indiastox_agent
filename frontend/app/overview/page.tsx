@@ -1,16 +1,23 @@
 "use client";
 
-import { Card, CardContent, CardHeader, CardTitle, KpiTile } from "@/components/ui";
-import { evalApi, llm, sim, EvalRun, Kpis } from "@/lib/api";
+import { Badge, Card, CardContent, CardHeader, CardTitle, HintIcon, KpiTile } from "@/components/ui";
+import { evalApi, llm, metrics, sim, EvalRun, Kpis, MetricResult } from "@/lib/api";
+import { METRICS } from "@/lib/glossary";
 import { useEffect, useState } from "react";
 
 export default function OverviewPage() {
   const [kpis, setKpis] = useState<Kpis | null>(null);
   const [evalRun, setEvalRun] = useState<EvalRun | null>(null);
+  const [divergence, setDivergence] = useState<MetricResult | null>(null);
+  const [aiContent, setAiContent] = useState<MetricResult | null>(null);
+  const [preIpo, setPreIpo] = useState<MetricResult | null>(null);
 
   useEffect(() => {
     sim.kpis().then(setKpis).catch(() => {});
     evalApi.latest().then(setEvalRun).catch(() => {});
+    metrics.invoke("call_consensus_divergence", { week_of: "2024-W01" }).then(setDivergence).catch(() => {});
+    metrics.invoke("ai_content_flagged_share", {}).then(setAiContent).catch(() => {});
+    metrics.invoke("pre_ipo_call_interest", { week_of: "2024-W01" }).then(setPreIpo).catch(() => {});
   }, []);
 
   return (
@@ -60,6 +67,47 @@ export default function OverviewPage() {
         </Card>
       </div>
 
+      <div className="mb-5">
+        <div className="text-xs font-medium tracking-widest text-[var(--muted-foreground)] uppercase mb-3">Product surfaces</div>
+        <div className="grid grid-cols-3 gap-4">
+          <ProductCard
+            title="Call consensus divergence"
+            valueText={divergence ? `${(divergence.value * 100).toFixed(1)}%` : ""}
+            subtitle={divergence ? `${divergence.sample_n} tickers, conf ${divergence.confidence.toFixed(2)}` : "loading"}
+            hint={METRICS.call_consensus_divergence.long || METRICS.call_consensus_divergence.short}
+            body={divergence?.interpretation || "Feed-weighting signal: how far is retail BULL consensus from outcome reality?"}
+            badge={divergence && divergence.breakdowns ? (() => {
+              const entries: any[] = Object.entries(divergence.breakdowns as any);
+              if (entries.length === 0) return null;
+              const worst = entries.reduce((a, b) => (a[1].divergence > b[1].divergence ? a : b));
+              return `worst: ${worst[0]} (${(Number(worst[1].divergence) * 100).toFixed(0)}pp gap)`;
+            })() : null}
+          />
+          <ProductCard
+            title="AI-content flagged share"
+            valueText={aiContent ? `${(aiContent.value * 100).toFixed(1)}%` : ""}
+            subtitle={aiContent ? `n=${aiContent.sample_n} sampled, FPR ${((aiContent.breakdowns as any)?.false_positive_rate * 100 || 0).toFixed(1)}%` : "loading"}
+            hint={METRICS.ai_content_flagged_share.long || METRICS.ai_content_flagged_share.short}
+            body={aiContent?.interpretation || "Content-policy surface: shadow-mode detector for AI-authored analysis posts."}
+            badge="shadow mode"
+            tone="info"
+          />
+          <ProductCard
+            title="Pre-IPO call interest"
+            valueText={preIpo ? `${(preIpo.value * 100).toFixed(1)}%` : ""}
+            subtitle={preIpo ? `${preIpo.sample_n.toLocaleString()} W01 calls` : "loading"}
+            hint={METRICS.pre_ipo_call_interest.long || METRICS.pre_ipo_call_interest.short}
+            body={preIpo?.interpretation || "Pre-IPO tray engagement, a leading indicator on tray-positioning decisions."}
+            badge={preIpo && preIpo.breakdowns ? (() => {
+              const entries: any[] = Object.entries(preIpo.breakdowns as any);
+              if (entries.length === 0) return null;
+              const top = entries.sort((a, b) => Number(b[1]) - Number(a[1]))[0];
+              return `top: ${top[0]} (${top[1]} calls)`;
+            })() : null}
+          />
+        </div>
+      </div>
+
       <Card>
         <CardHeader><CardTitle>Dashboard mosaic. Four panels, live</CardTitle></CardHeader>
         <CardContent>
@@ -67,5 +115,34 @@ export default function OverviewPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function ProductCard({ title, valueText, subtitle, hint, body, badge, tone = "neutral" }: {
+  title: string;
+  valueText: string;
+  subtitle: string;
+  hint: string;
+  body: string;
+  badge?: string | null;
+  tone?: "neutral" | "info";
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-start justify-between">
+          <CardTitle className="text-sm font-medium">
+            {title}
+            <HintIcon content={hint} />
+          </CardTitle>
+          {badge && <Badge variant={tone === "info" ? "info" : "outline"} className="text-[10px] shrink-0">{badge}</Badge>}
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="text-2xl font-semibold tabular-nums tracking-tight">{valueText || "."}</div>
+        <div className="text-[11px] text-[var(--muted-foreground)] mono mt-1">{subtitle}</div>
+        <p className="text-xs text-[var(--muted-foreground)] mt-3 leading-relaxed">{body}</p>
+      </CardContent>
+    </Card>
   );
 }
