@@ -280,6 +280,28 @@ class MetricVersions(WorkbookBase):
     change_note: Optional[str] = None
 
 
+class SourceTableVersions(WorkbookBase):
+    """DDL-hash snapshot per upstream source table — N8 anti-Goodhart axis 2.
+
+    Every pipeline run hashes the schema (column names + types) of each
+    source table that metrics read from. If the hash drifts without a
+    deliberate migration, `metric_gameability_index` fires the
+    `source_table_drift` axis — meaning a metric's definition stayed
+    constant but its source got reshaped, and any number cited under
+    the prior DDL is no longer directly comparable.
+    """
+
+    table_name: ClassVar[str] = "source_table_versions"
+    primary_key: ClassVar[list[str]] = ["source_table_name", "ddl_hash"]
+
+    source_table_name: str  # renamed from `table_name` to avoid shadowing the ClassVar
+    ddl_hash: str  # sha256 of column-name + type list
+    deployed_at: datetime
+    deprecated_at: Optional[datetime] = None
+    column_count: int
+    notes: Optional[str] = None
+
+
 ALL_TABLES: list[type[WorkbookBase]] = [
     DimUser,
     DimChallenge,
@@ -291,6 +313,7 @@ ALL_TABLES: list[type[WorkbookBase]] = [
     AgentActions,
     Proposals,
     MetricVersions,
+    SourceTableVersions,
 ]
 
 

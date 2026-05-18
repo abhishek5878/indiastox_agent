@@ -617,6 +617,13 @@ def load_warehouse(
         scan_and_audit(verbose=False)
     except Exception as e:
         print(f"WARN: data-quality scan failed: {e}", file=sys.stderr)
+    # Layer N8 axis 2 — snapshot source-table DDL hashes so the gameability
+    # watchdog can detect a source-shape change between runs.
+    try:
+        from core.source_table_registry import register_all as register_source_ddls
+        register_source_ddls()
+    except Exception as e:
+        print(f"WARN: source-table-registry snapshot failed: {e}", file=sys.stderr)
     con = duckdb.connect(str(WAREHOUSE_DB), read_only=False)
 
     # audit_log

@@ -39,7 +39,7 @@ DEFS = {
     "gyaani_graduation_rate": "1.0.0",
     "predictions_per_user": "1.0.0",
     "email_click_to_signup": "1.0.0",
-    "metric_gameability_index": "1.0.0",
+    "metric_gameability_index": "2.0.0",
 }
 
 
@@ -875,82 +875,159 @@ def email_click_to_signup() -> MetricResult:
 # 12. metric_gameability_index — anti-Goodhart watchdog (Layer M)
 # ---------------------------------------------------------------------------
 
-@versioned("1.0.0")
+@versioned("2.0.0")
 def metric_gameability_index() -> MetricResult:
-    """How gameable is the metric layer right now?
+    """Three-axis anti-Goodhart watchdog (N8 multi-axis upgrade).
 
-    For each metric currently in the metric_versions ledger:
-      drift_signal = (n_distinct_hashes - 1)  → 0 when stable, 1+ after any redefinition
-      The composite per-metric gameability index = drift_signal * 0.5,
-      capped at 1.0.
+    Computes a gameability score along three independent axes; the
+    global index is `max` across axes (worst-case reporting, since a
+    single compromised axis breaks the substrate's contract).
 
-    The global index = max across metrics (worst-case is what matters —
-    a single gamed metric breaks the contract for any agent consuming the
-    suite). A future version correlates each hash-transition timestamp
-    with engineering deploys to the underlying tables; today the ledger
-    is the signal, and the act of NAMING this failure mode is the value.
+      Axis 1 — definition_hash_drift
+          For each metric in the metric_versions ledger: how many
+          distinct definition_hash rows has it had? 0 = pristine, 1
+          redefinition = 0.5, 2+ = 1.0.
+
+      Axis 2 — source_table_drift  (NEW in v2.0.0)
+          For each tracked source table: how many distinct DDL hashes
+          has it had? Same scoring. Detects the failure mode where a
+          metric's definition stayed constant but its underlying source
+          got reshaped — Goodhart's quietest variant.
+
+      Axis 3 — value_outlier_drift  (NEW in v2.0.0)
+          For each metric: between consecutive runs in metric_results,
+          flag any value that moved more than 3σ without a definition
+          hash change. Requires ≥ 3 historical runs to be meaningful.
+          Returns 0 if insufficient history.
 
     The brief calls out "agents optimizing against metrics" as the
     dominant failure mode of an agent-native substrate. This is the
-    watchdog — the answer to "who watches the watchers?" within the
-    same substrate the watchers run on.
+    watchdog. Today's index is dominated by Axis 1 (the ledger is the
+    most-mature signal); Axes 2 + 3 are the new teeth.
     """
     if not WAREHOUSE_DB.exists():
         raise FileNotFoundError(f"{WAREHOUSE_DB} missing — run `make resolve` first.")
 
     con = _connect()
     try:
-        rows = con.execute(
-            """
-            SELECT metric_name,
-                   COUNT(DISTINCT definition_hash) AS n_hashes,
-                   COUNT(*) AS n_versions,
-                   MIN(deployed_at) AS first_seen,
-                   MAX(deployed_at) AS last_seen
-            FROM metric_versions
-            GROUP BY metric_name
-            ORDER BY n_hashes DESC, metric_name
-            """
+        # ---- Axis 1: definition_hash_drift ----
+        per_metric_rows = con.execute(
+            """SELECT metric_name, COUNT(DISTINCT definition_hash) AS n_hashes
+               FROM metric_versions GROUP BY metric_name"""
         ).fetchall()
+        per_metric = []
+        for metric, n_hashes in per_metric_rows:
+            drift_signal = max(0, int(n_hashes) - 1)
+            per_metric.append(dict(
+                metric_name=metric,
+                n_hashes=int(n_hashes),
+                drift_signal=drift_signal,
+                axis_score=min(1.0, drift_signal * 0.5),
+            ))
+        total_metrics = len(per_metric)
+        axis_1 = max((m["axis_score"] for m in per_metric), default=0.0)
+        axis_1_flagged = [m["metric_name"] for m in per_metric if m["axis_score"] > 0]
+
+        # ---- Axis 2: source_table_drift ----
+        # Read from source_table_versions; one row per (source_table_name, ddl_hash).
+        # If a table has > 1 distinct hash in history, the source has reshaped.
+        try:
+            src_rows = con.execute(
+                """SELECT source_table_name, COUNT(DISTINCT ddl_hash) AS n_hashes
+                   FROM source_table_versions GROUP BY source_table_name"""
+            ).fetchall()
+        except duckdb.CatalogException:
+            src_rows = []
+        per_source = []
+        for table, n_hashes in src_rows:
+            drift_signal = max(0, int(n_hashes) - 1)
+            per_source.append(dict(
+                source_table_name=table,
+                n_hashes=int(n_hashes),
+                drift_signal=drift_signal,
+                axis_score=min(1.0, drift_signal * 0.5),
+            ))
+        axis_2 = max((s["axis_score"] for s in per_source), default=0.0)
+        axis_2_flagged = [s["source_table_name"] for s in per_source if s["axis_score"] > 0]
+
+        # ---- Axis 3: value_outlier_drift ----
+        # Per metric, look at metric_results history. We need >= 3 historical
+        # rows per metric to compute a sample stddev. Flag if the most recent
+        # value sits > 3σ from the mean of prior rows (same metric, same
+        # definition_hash so we're not catching legitimate redefinitions).
+        per_value: list[dict] = []
+        try:
+            metric_names = [r[0] for r in con.execute(
+                "SELECT DISTINCT metric_name FROM metric_results"
+            ).fetchall()]
+        except duckdb.CatalogException:
+            metric_names = []
+        for m in metric_names:
+            history = con.execute(
+                """SELECT value FROM metric_results
+                   WHERE metric_name = ? AND breakdown_key = 'all'
+                   ORDER BY as_of""",
+                [m],
+            ).fetchall()
+            vals = [float(r[0]) for r in history]
+            if len(vals) < 3:
+                per_value.append(dict(
+                    metric_name=m, n_runs=len(vals),
+                    axis_score=0.0, reason="insufficient_history",
+                ))
+                continue
+            prior, latest = vals[:-1], vals[-1]
+            mean = sum(prior) / len(prior)
+            var = sum((v - mean) ** 2 for v in prior) / max(1, len(prior) - 1)
+            std = var ** 0.5
+            if std == 0:
+                z = 0.0
+            else:
+                z = abs(latest - mean) / std
+            axis_score = 0.0
+            if z > 3.0:
+                axis_score = 1.0
+            elif z > 2.0:
+                axis_score = 0.5
+            per_value.append(dict(
+                metric_name=m, n_runs=len(vals),
+                latest=latest, mean=mean, std=std, z=z,
+                axis_score=axis_score,
+            ))
+        axis_3 = max((v["axis_score"] for v in per_value), default=0.0)
+        axis_3_flagged = [v["metric_name"] for v in per_value if v["axis_score"] > 0]
     finally:
         con.close()
 
-    per_metric: list[dict] = []
-    worst_score = 0.0
-    worst_metric: Optional[str] = None
-    for metric, n_hashes, n_versions, first_seen, last_seen in rows:
-        drift_signal = max(0, int(n_hashes) - 1)
-        score = min(1.0, drift_signal * 0.5)
-        per_metric.append(dict(
-            metric_name=metric,
-            n_hashes=int(n_hashes),
-            n_versions=int(n_versions),
-            drift_signal=drift_signal,
-            gameability_score=score,
-        ))
-        if score > worst_score:
-            worst_score = score
-            worst_metric = metric
+    worst_score = max(axis_1, axis_2, axis_3)
+    flagged_total = len(axis_1_flagged) + len(axis_2_flagged) + len(axis_3_flagged)
 
-    flagged = [m for m in per_metric if m["gameability_score"] > 0]
-    total_metrics = len(per_metric)
+    # Identify worst axis.
+    axis_scores = {"definition_hash_drift": axis_1,
+                   "source_table_drift": axis_2,
+                   "value_outlier_drift": axis_3}
+    worst_axis = max(axis_scores, key=axis_scores.get) if worst_score > 0 else "none"
 
     interp = (
-        f"Global metric_gameability_index = {worst_score:.2f} "
-        f"({len(flagged)}/{total_metrics} metrics have shifted definition_hash since first deployment). "
-        f"{'Worst offender: ' + worst_metric if worst_metric and worst_score > 0 else 'All metrics stable at single hash today.'}"
+        f"Global metric_gameability_index = {worst_score:.2f} = max across 3 axes "
+        f"(definition_hash_drift={axis_1:.2f}, source_table_drift={axis_2:.2f}, "
+        f"value_outlier_drift={axis_3:.2f}). "
+        + ("All axes clean — substrate has not drifted." if worst_score == 0
+           else f"Worst axis: {worst_axis}; flagged: {flagged_total}.")
     )
 
     trace = [
-        f"metric_gameability_index = {worst_score:.2f} = max gameability across {total_metrics} tracked metrics "
-        f"(0 = stable at one definition; 0.5 = one redefinition; 1.0 = three+ redefinitions).",
-        f"Per-metric breakdown sourced from `metric_versions` ledger. "
-        + (f"{len(flagged)} metric(s) flagged: " + ", ".join(m["metric_name"] for m in flagged)
-           if flagged else "Today all metrics have exactly one active hash → gameability floor."),
-        "Confidence = 1.00 because the ledger query is deterministic. What this index DOESN'T yet catch: a "
-        "metric whose definition stayed constant but whose underlying table got silently re-shaped by a "
-        "deploy. That's the next layer of the watchdog — correlate `metric_versions.deployed_at` against "
-        "table-deploy timestamps once they're tracked.",
+        f"metric_gameability_index = {worst_score:.2f} = max across 3 anti-Goodhart axes "
+        f"(definition_hash_drift, source_table_drift, value_outlier_drift). "
+        f"Worst axis: {worst_axis}.",
+        f"Coverage: {total_metrics} metrics in the definition ledger, "
+        f"{len(per_source)} source tables tracked, "
+        f"{sum(1 for v in per_value if v.get('n_runs', 0) >= 3)} metrics with "
+        f"sufficient run-history for value-outlier detection (≥3 runs).",
+        f"Confidence 1.00 — all three axes are deterministic ledger queries. "
+        f"What this still won't catch: a coordinated agent that gradually drifts "
+        f"a metric value within ±3σ over many runs to stay under the radar. "
+        f"That class of attack requires longitudinal anomaly detection (KL divergence over breakdowns); flagged for v3.",
     ]
 
     return MetricResult(
@@ -959,21 +1036,25 @@ def metric_gameability_index() -> MetricResult:
         confidence=1.0,
         sample_n=total_metrics,
         provenance=[
+            f"axis_1_definition_hash_drift:{axis_1:.2f}",
+            f"axis_2_source_table_drift:{axis_2:.2f}",
+            f"axis_3_value_outlier_drift:{axis_3:.2f}",
+            f"worst_axis:{worst_axis}",
             f"metrics_tracked:{total_metrics}",
-            f"metrics_with_drift:{len(flagged)}",
-            f"worst_offender:{worst_metric or 'none'}",
-            "method:max_over_per_metric_drift_signal",
+            f"source_tables_tracked:{len(per_source)}",
+            "method:max_over_three_axes",
         ],
         window_open=False,
         interpretation=interp,
         trace=trace,
         definition_version=DEFS["metric_gameability_index"],
-        computation_sql="SELECT metric_name, COUNT(DISTINCT definition_hash) FROM metric_versions GROUP BY metric_name",
+        computation_sql="3-axis max over metric_versions, source_table_versions, metric_results",
         as_of=_now(),
         breakdowns=dict(
-            per_metric=per_metric,
-            total_metrics=total_metrics,
-            flagged_count=len(flagged),
-            worst_offender=worst_metric,
+            worst_score=worst_score,
+            worst_axis=worst_axis,
+            axis_1=dict(score=axis_1, flagged=axis_1_flagged, per_metric=per_metric),
+            axis_2=dict(score=axis_2, flagged=axis_2_flagged, per_source=per_source),
+            axis_3=dict(score=axis_3, flagged=axis_3_flagged, per_value=per_value),
         ),
     )

@@ -4,18 +4,22 @@ before it ever reaches a human.
 The brief lists "approval ladder for actions of escalating consequence" as
 one of its six engineering bets. The CS-Agent, Growth-Agent, and
 improvement-agent all PROPOSE; this agent ADVERSARIALLY-REVIEWS those
-proposals against three lenses:
+proposals.
 
-  1. Acquisition / engagement impact — what does the proposal forego?
-  2. Confounders — what unobserved variable could explain the trigger?
-  3. Reversibility cost — what's the cost of being wrong?
+Pass C / N5 — confounders FACT-CHECK against the live substrate.
+Previously the confounder list was a hardcoded `dict[metric → list[str]]`
+of plausible objections. Now each confounder is a `(name, check_function)`
+pair; the check runs a tool call (data-quality scan, gameability index,
+brier score, dark-channel fraction) and returns `(fired: bool, evidence:
+str)`. The critique cites concrete numbers from the checks, not
+hardcoded prose. Severity weighting is driven by the count of *fired*
+confounders.
 
 Output: a `critique` dict attached to the proposal YAML, surfaced to the
 human at approval time. Humans see proposal + critique paired, never the
-bare proposal. The Critic ALSO writes a modified `alternative_proposal`
-the human can adopt instead of the original.
+bare proposal. The Critic ALSO writes a modified `alternative_proposal`.
 
-Rule-based today; LLM-pluggable tomorrow with no substrate change.
+Rule-based today; LLM-pluggable tomorrow.
 """
 from __future__ import annotations
 
@@ -24,7 +28,7 @@ import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 import duckdb
 import yaml
@@ -40,32 +44,134 @@ PROPOSALS_PENDING = _REPO / "proposals" / "pending"
 PROPOSALS_APPROVED = _REPO / "proposals" / "approved"
 
 
-# Known confounders by metric — non-exhaustive; rule of thumb is "what
-# unobserved variable could move this number without the agent's
-# proposed cause being responsible?".
-CONFOUNDERS_BY_METRIC: dict[str, list[str]] = {
+# ---------------------------------------------------------------------------
+# Confounder check functions — each returns (fired: bool, evidence: str).
+# Each function takes a ToolSession so it can audit-log its calls.
+# ---------------------------------------------------------------------------
+
+def _check_klaviyo_deliverability(session: ToolSession) -> tuple[bool, str]:
+    """Fires if the Klaviyo stream shows > 1% clock-skew rate.
+
+    Clock-skew in the email-event stream is a leading indicator of
+    deliverability problems at the producer (timestamps drift because
+    the SMTP relay is buffering / retrying). If we see > 1%, the
+    "Unstop landing-page didn't render" hypothesis is contaminated
+    by a competing explanation: the email funnel itself is broken.
+    """
+    if not WAREHOUSE.exists():
+        return False, "warehouse missing"
+    con = duckdb.connect(str(WAREHOUSE), read_only=True)
+    try:
+        # Read the most recent data_quality audit row for clock_skew.
+        row = con.execute(
+            """SELECT notes FROM audit_log
+               WHERE pipeline_stage = 'data_quality'
+                 AND notes LIKE '%clock_skew%'
+               ORDER BY run_at DESC LIMIT 1"""
+        ).fetchone()
+    finally:
+        con.close()
+    if not row:
+        return False, "no data_quality scan has run; deliverability state unknown"
+    notes = row[0]
+    # Parse "27/672 pairs (4.0%)"
+    import re
+    m = re.search(r"(\d+)/(\d+) pairs \((\d+(?:\.\d+)?)%\)", notes)
+    if not m:
+        return False, f"could not parse data_quality notes: {notes}"
+    found, total, pct = int(m.group(1)), int(m.group(2)), float(m.group(3))
+    fired = pct > 1.0
+    evidence = (
+        f"data_quality scan: {found}/{total} email-pairs ({pct:.1f}%) have "
+        f"opened.ts < sent.ts. {'FIRES (>1% threshold)' if fired else 'does NOT fire'}."
+    )
+    return fired, evidence
+
+
+def _check_identity_resolution_drift(session: ToolSession) -> tuple[bool, str]:
+    """Fires if metric_gameability_index > 0 — any metric has shifted hash."""
+    try:
+        g = session.call("metric_gameability_index")
+    except Exception as e:
+        return False, f"gameability tool call failed: {e}"
+    fired = g.value > 0.0
+    evidence = (
+        f"metric_gameability_index = {g.value:.2f}. "
+        f"{'FIRES — at least one metric has redefined since first deploy.' if fired else 'does NOT fire — all metrics at original hash.'}"
+    )
+    return fired, evidence
+
+
+def _check_prediction_market_noise(session: ToolSession) -> tuple[bool, str]:
+    """Fires if Brier score is at or worse than the random-guess baseline.
+
+    A ghost-rate spike + a Brier near 0.25 means the population's
+    predictions are noise. Pausing a channel won't change the noise
+    floor; the right intervention is upstream (better prediction prompts).
+    """
+    try:
+        b = session.call("brier_score", week_of="2024-W01")
+    except Exception as e:
+        return False, f"brier_score tool call failed: {e}"
+    fired = b.value >= 0.24
+    evidence = (
+        f"brier_score = {b.value:.4f} (random-guess baseline = 0.25). "
+        f"{'FIRES — predictions near noise floor; channel intervention may be misdirected.' if fired else 'does NOT fire — predictions show signal.'}"
+    )
+    return fired, evidence
+
+
+def _check_dark_channel_dominance(session: ToolSession) -> tuple[bool, str]:
+    """Fires when dark_channel_fraction > 15% — any attribution-side
+    intervention is bounded by the dark cohort the team can't measure.
+    """
+    try:
+        d = session.call("dark_channel_fraction", week_of="2024-W01")
+    except Exception as e:
+        return False, f"dark_channel_fraction tool call failed: {e}"
+    fired = d.value > 0.15
+    evidence = (
+        f"dark_channel_fraction = {d.value:.1%}. "
+        f"{'FIRES — attribution-side interventions are bounded by this floor.' if fired else 'does NOT fire — attribution coverage is reasonable.'}"
+    )
+    return fired, evidence
+
+
+def _check_exam_season() -> tuple[bool, str]:
+    """Calendar context not in the substrate → unverifiable today.
+
+    We surface this as a known-unverifiable confounder rather than
+    silently dropping it; an LLM agent or a human can fill the gap.
+    """
+    return False, "calendar context not in the substrate; confounder UNVERIFIABLE today"
+
+
+# Each entry: (display_name, check_function). check_function may take a
+# ToolSession (data-driven check) or no arg (static / unverifiable).
+ConfounderCheck = tuple[str, Callable[..., tuple[bool, str]]]
+
+CONFOUNDERS_BY_METRIC: dict[str, list[ConfounderCheck]] = {
     "ghost_rate": [
-        "college exam-season seasonality (Indian academic calendar W01 ≈ end-of-semester crunch)",
-        "Klaviyo deliverability shift (open-rate drop ≠ creative problem)",
-        "identity-resolution drift: ~17% probabilistic matches mean the dark cohort's true ghost rate is bounded, not measured",
-        "prediction-market liquidity drop (fewer interesting calls available, not fewer interested users)",
+        ("klaviyo_deliverability_drop",   _check_klaviyo_deliverability),
+        ("prediction_market_noise_floor", _check_prediction_market_noise),
+        ("identity_resolution_drift",     _check_identity_resolution_drift),
+        ("dark_channel_dominance",        _check_dark_channel_dominance),
+        ("exam_season_seasonality",       _check_exam_season),
     ],
     "time_to_first_action": [
-        "onboarding tutorial completion rate — slow first action may reflect a learning curve, not a friction",
-        "device-shift effect (Tier-2 cities on slower connections)",
-        "weekend / weekday signup mix in the cohort",
+        ("klaviyo_deliverability_drop",   _check_klaviyo_deliverability),
+        ("identity_resolution_drift",     _check_identity_resolution_drift),
     ],
     "unstop_to_participation_rate": [
-        "college-cohort homogeneity: a single dorm signup wave can spike or tank the rate",
-        "weekly_challenge difficulty / topic (some weeks attract less follow-through irrespective of channel)",
+        ("identity_resolution_drift",     _check_identity_resolution_drift),
+        ("prediction_market_noise_floor", _check_prediction_market_noise),
     ],
     "weekly_active_posters": [
-        "identity-confidence gate threshold drift — at 0.85 vs 0.70 the count moves 5-10% without underlying activity changing",
-        "deferred outcomes still resolving at window edge",
+        ("identity_resolution_drift",     _check_identity_resolution_drift),
+        ("prediction_market_noise_floor", _check_prediction_market_noise),
     ],
     "dark_channel_fraction": [
-        "iOS 14+ privacy changes (a step-change in UTM dropout that has nothing to do with channel quality)",
-        "WhatsApp share-link normalization (a deep-link feature toggle on the app side)",
+        ("identity_resolution_drift",     _check_identity_resolution_drift),
     ],
 }
 
@@ -78,10 +184,31 @@ def _proposal_path(proposal_id: str) -> Optional[Path]:
     return None
 
 
+def _run_confounder_checks(metric_name: str, session: ToolSession) -> list[dict]:
+    """Run every catalogued confounder check for `metric_name`.
+
+    Returns list of dicts: {name, fired, evidence}. Severity downstream
+    consumes the count of `fired = True` rows.
+    """
+    checks = CONFOUNDERS_BY_METRIC.get(metric_name, [])
+    out: list[dict] = []
+    for name, check_fn in checks:
+        try:
+            # Some checks need a ToolSession; others don't.
+            import inspect
+            params = list(inspect.signature(check_fn).parameters)
+            if params:
+                fired, evidence = check_fn(session)
+            else:
+                fired, evidence = check_fn()
+        except Exception as e:
+            fired, evidence = False, f"check errored: {e}"
+        out.append(dict(name=name, fired=bool(fired), evidence=evidence))
+    return out
+
+
 def _acquisition_impact(metric_name: str, hypothesis: str, session: ToolSession) -> dict:
     """Quantify what the proposal would forego in acquired-user terms."""
-    # If the affected metric is acquisition-adjacent, surface the channel's
-    # current contribution as the cost-of-pausing.
     lower = (hypothesis or "").lower()
     if "unstop" in lower or "channel" in lower or metric_name in ("ghost_rate", "channel_cac_bounds"):
         dark = session.call("dark_channel_fraction", week_of="2024-W01")
@@ -106,25 +233,27 @@ def _reversibility_cost(proposal: dict) -> str:
     return "high — multi-month, requires a separate decision to reverse"
 
 
-def _alternative(proposal: dict, confounders: list[str]) -> str:
-    """A modified proposal that addresses the critique."""
+def _alternative(proposal: dict, fired_confounders: list[str]) -> str:
     metric = proposal.get("affected_metric", "")
+    fired_str = ", ".join(fired_confounders) if fired_confounders else "no data-driven confounders fired"
     if metric == "ghost_rate":
         return (
             "Run a 1-week creative-only A/B on the Unstop landing page (don't pause spend). "
             "Compare ghost_rate of variant-cohort vs control-cohort within Unstop using the "
-            "same metric_version. Decide on full creative rollout based on the 7-day point "
-            "estimate + a 4-week extrapolation that survives the exam-season confounder."
+            "same metric_version. Before launching, individually rule out the fired "
+            f"confounders ({fired_str}): for klaviyo_deliverability_drop, audit the email "
+            "stream timestamps in the prior 7 days; for identity_resolution_drift, freeze "
+            "the metric_versions table and re-run reproduce; for prediction_market_noise_floor, "
+            "compare Brier across cohorts before declaring the variant a winner."
         )
     return (
         "Tighten the experiment to a single channel, single week, single creative variant. "
-        "Re-evaluate at the 7-day mark. Hold off on the broader rollout until the "
-        "confounders listed above are individually ruled out."
+        f"Re-evaluate at the 7-day mark. Rule out the fired confounders ({fired_str}) "
+        "before broader rollout."
     )
 
 
 def critique(proposal_id: str, *, write_back: bool = True) -> dict:
-    """Generate (and optionally persist) a critique for a proposal."""
     path = _proposal_path(proposal_id)
     if path is None:
         raise FileNotFoundError(f"proposal {proposal_id} not found in pending/ or approved/")
@@ -136,27 +265,45 @@ def critique(proposal_id: str, *, write_back: bool = True) -> dict:
     required_n = proposal.get("required_sample_n", 0)
 
     session = ToolSession()
+
+    # Fact-check every catalogued confounder against the live substrate.
+    confounder_results = _run_confounder_checks(metric_name, session)
+    fired = [c for c in confounder_results if c["fired"]]
+    fired_names = [c["name"] for c in fired]
+
     acq = _acquisition_impact(metric_name, hypothesis, session)
-    confounders = CONFOUNDERS_BY_METRIC.get(metric_name, ["no canonical confounders catalogued for this metric"])
     rev = _reversibility_cost(proposal)
-    alt = _alternative(proposal, confounders)
+    alt = _alternative(proposal, fired_names)
 
-    # Severity: high when (a) the proposal asks for ≥10pp lift on a >0.20-confidence
-    # metric, (b) confounders are catalogued AND not addressed in hypothesis,
-    # or (c) reversibility is high.
-    severity = "medium"
-    if abs(expected_lift_pct) >= 10 and "exam" not in hypothesis.lower():
+    # Severity rules (data-driven):
+    #   high — any fired confounder + non-trivial lift target
+    #          OR reversibility cost = high
+    #   medium — lift target >= 10pp but no fired confounders
+    #   low — otherwise
+    if (fired and abs(expected_lift_pct) >= 5) or "high" in rev:
         severity = "high"
-    if "high" in rev:
-        severity = "high"
+    elif abs(expected_lift_pct) >= 10:
+        severity = "medium"
+    else:
+        severity = "low"
 
-    counter_argument = (
+    # Counter-argument cites the actual fired confounders' evidence.
+    counter_lines = [
         f"The proposal targets a {abs(expected_lift_pct):.0f}pp lift on `{metric_name}` "
         f"by changing the {hypothesis.split('.')[0].lower() if hypothesis else 'mechanism'}, "
-        f"requiring n≈{required_n}. {acq['note']} "
-        f"Before acting, at least one of these confounders should be individually ruled out: "
-        f"{'; '.join(confounders[:2])}."
-    )
+        f"requiring n≈{required_n}. {acq['note']}",
+    ]
+    if fired:
+        counter_lines.append(
+            f"DATA-DRIVEN CONCERNS — {len(fired)} confounder(s) actually fire against the current substrate:"
+        )
+        for c in fired:
+            counter_lines.append(f"  • {c['name']}: {c['evidence']}")
+    else:
+        counter_lines.append(
+            "No catalogued confounders fire against the current data — proposal is on its own merits."
+        )
+    counter_argument = "\n".join(counter_lines)
 
     critique_dict = dict(
         critique_id=f"CRIT-{uuid.uuid4().hex[:12]}",
@@ -164,17 +311,18 @@ def critique(proposal_id: str, *, write_back: bool = True) -> dict:
         proposal_id=proposal_id,
         severity=severity,
         counter_argument=counter_argument,
-        confounders_to_rule_out=confounders,
+        confounder_checks=confounder_results,  # full list with fired flag + evidence
+        confounders_fired=fired_names,
         acquisition_impact=acq,
         reversibility_cost=rev,
         alternative_proposal=alt,
         session_id=session.session_id,
+        critic_version="2.0.0",  # bumped from 1.0.0 (rule-based table) → 2.0.0 (data-driven checks)
     )
 
     if write_back:
         proposal["critique"] = critique_dict
         path.write_text(yaml.safe_dump(proposal, sort_keys=False, default_flow_style=False))
-        # Also log to agent_actions.
         if WAREHOUSE.exists():
             con = duckdb.connect(str(WAREHOUSE), read_only=False)
             try:
@@ -188,7 +336,8 @@ def critique(proposal_id: str, *, write_back: bool = True) -> dict:
                         datetime.now(timezone.utc),
                         session.session_id,
                         "critique_proposal",
-                        json.dumps({"proposal_id": proposal_id, "severity": severity}),
+                        json.dumps({"proposal_id": proposal_id, "severity": severity,
+                                    "confounders_fired": fired_names}),
                         critique_dict["critique_id"],
                         0.7,
                         proposal_id,
@@ -197,7 +346,7 @@ def critique(proposal_id: str, *, write_back: bool = True) -> dict:
                 )
             finally:
                 con.close()
-        print(f"critique written to {path} (severity={severity})", file=sys.stderr)
+        print(f"critique written to {path} (severity={severity}; fired={fired_names})", file=sys.stderr)
 
     return critique_dict
 
@@ -218,18 +367,19 @@ def main() -> None:
         sys.exit(2)
     c = critique(proposal_id, write_back=not args.no_write)
     print()
-    print(f"=== Critique for {proposal_id} (severity={c['severity']}) ===")
+    print(f"=== Critique for {proposal_id} (severity={c['severity']}; critic v{c['critic_version']}) ===")
     print()
-    print(f"COUNTER:    {c['counter_argument']}")
+    print(f"COUNTER:\n{c['counter_argument']}")
     print()
-    print("CONFOUNDERS to rule out:")
-    for cf in c["confounders_to_rule_out"]:
-        print(f"  - {cf}")
+    print(f"CONFOUNDER CHECKS ({sum(1 for cc in c['confounder_checks'] if cc['fired'])}/{len(c['confounder_checks'])} fired):")
+    for cc in c["confounder_checks"]:
+        flag = "🔥 FIRED" if cc["fired"] else "·"
+        print(f"  {flag}  {cc['name']}")
+        print(f"          {cc['evidence']}")
     print()
     print(f"REVERSIBILITY: {c['reversibility_cost']}")
     print()
-    print(f"ALTERNATIVE:")
-    print(f"  {c['alternative_proposal']}")
+    print(f"ALTERNATIVE:\n  {c['alternative_proposal']}")
     print()
 
 
