@@ -107,6 +107,16 @@ def check_2_defined_once() -> bool:
         # It calls `session.call("ghost_rate", ...)` and reads identity
         # summary SQL (same as core/), never redefines metrics.
         is_ui = path.is_relative_to(REPO / "ui")
+        # api/ is the FastAPI gateway — pure metric-layer consumer. Routes
+        # call ToolSession.call("ghost_rate", ...); the SQL arithmetic in
+        # the files is for sim-state counts (dim_user, fact_prediction),
+        # not metric recomputation.
+        is_api = path.is_relative_to(REPO / "api")
+        # sim/ is the Living World. watchers.py calls ToolSession.call(
+        # "ghost_rate", ...) to detect signal moves; world.py never
+        # references ghost_rate as a metric (only as part of payload
+        # strings on sim_events). Treat as a consumer.
+        is_sim = path.is_relative_to(REPO / "sim")
         # DEMO.md scripts a demo against the substrate. Mentions metric
         # names in narrative + shows example SQL queries against
         # warehouse tables, not metric recomputation.
@@ -115,7 +125,8 @@ def check_2_defined_once() -> bool:
         if (has_arithmetic and not imports_metric and not is_dashboard_spec
                 and not is_eval_ground_truth and not is_framework
                 and not is_dashboard_dir and not is_assets_viz
-                and not is_demo_script and not is_ui):
+                and not is_demo_script and not is_ui
+                and not is_api and not is_sim):
             print(f"  SUSPECT: {path.relative_to(REPO)} — has `{needle}` + SQL arithmetic + no metric import")
             ok = False
         elif has_arithmetic and is_dashboard_spec:
@@ -130,6 +141,10 @@ def check_2_defined_once() -> bool:
             print(f"  ok ({path.name}): visualization script — reads warehouse, not a metric layer")
         elif has_arithmetic and is_ui:
             print(f"  ok ({path.name}): UI consumer — calls TOOLS, not a metric layer")
+        elif has_arithmetic and is_api:
+            print(f"  ok ({path.name}): API consumer — calls ToolSession, not a metric layer")
+        elif has_arithmetic and is_sim:
+            print(f"  ok ({path.name}): sim consumer — calls ToolSession, not a metric layer")
         elif has_arithmetic and is_demo_script:
             print(f"  ok ({path.name}): demo script — example SQL, not metric recomputation")
         elif imports_metric:

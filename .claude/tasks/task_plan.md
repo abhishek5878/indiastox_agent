@@ -118,3 +118,36 @@ All captured. See the 16 entries currently in `.claude/tasks/lessons.md` — fro
 
 ### Status
 **Plan complete.** The next non-trivial work on this repo (real-data integration, productionizing the LLM agent, second-week eval) should archive this task_plan and start a new one.
+
+---
+
+## 2026-05-19 — Handoff after demo polish + loop closure
+
+The original 7-phase plan (above) and Layers A–M are still the
+canonical history. Since the last entry on 2026-05-17, the scope
+grew substantially. A complete narrative lives in `progress.md`
+under the `2026-05-19` entry. Headline:
+
+- **Stack:** Streamlit retired. FastAPI gateway + Next.js console
+  shipped to Vercel + Render free tier; always-warm via GitHub
+  Actions cron.
+- **Metric tools:** 12 -> 22. The new ones add product surfaces
+  (call_consensus_divergence, ai_content_flagged_share,
+  pre_ipo_call_interest), behavior aggregates
+  (behavioral_concentration_index, cascade_followon_lift,
+  gyaani_influence_index), and loop calibrations
+  (user_disengagement_rate, ghost_recovery_rate,
+  proposal_lift_calibration_index).
+- **Closed loops:** added 3 (sim ghost -> CS, proposal -> readout,
+  was already 3 -> now 6).
+- **Open loops:** 3 still open (watcher auto-proposal, ghost
+  auto-intervention, eval rerun). Each is a single-file change.
+
+**Failure modes:** 11/11 PASS after extending FM2's
+allowlist to include `api/` and `sim/` as legitimate ToolSession
+consumers.
+
+**Status: no in_progress phases.** Demo is shippable. The next
+session can pick up either by closing the remaining 3 loops or by
+starting the real-data integration (replace W01 synthetic events
+with a live NDJSON tail).
