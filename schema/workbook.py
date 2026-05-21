@@ -115,6 +115,7 @@ class DimUser(WorkbookBase):
     acquisition_source: Optional[str] = None  # earliest known acquisition source
     signup_time: Optional[datetime] = None
     true_skill: Optional[float] = None  # latent ground-truth (Layer N1); for Glicko-2 mu validation
+    archetype_slug: Optional[str] = None  # P0.5 substrate hookup; null for pre-P0.5 users
 
 
 class DimChallenge(WorkbookBase):

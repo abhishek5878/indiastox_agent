@@ -29,6 +29,8 @@ from typing import Optional
 
 import duckdb
 
+from sim.archetypes import archetype_for_persona, sample_initial_true_skill
+
 _REPO = Path(__file__).resolve().parents[1]
 WAREHOUSE = _REPO / "warehouse" / "indiastox.duckdb"
 
@@ -67,6 +69,23 @@ CREATE TABLE IF NOT EXISTS sim_events (
 
 def _ensure_table(con) -> None:
     con.execute(_SIM_EVENTS_DDL)
+    _ensure_dim_user_archetype_column(con)
+
+
+def _ensure_dim_user_archetype_column(con) -> None:
+    """Idempotently add `archetype_slug` to an existing dim_user table.
+
+    Fresh warehouses get the column via the Pydantic-generated DDL. Pre-P0.5
+    warehouses already on disk predate it; this ALTER runs once and is a
+    no-op when the column is already present.
+    """
+    rows = con.execute(
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_name = 'dim_user'"
+    ).fetchall()
+    cols = {r[0] for r in rows}
+    if cols and "archetype_slug" not in cols:
+        con.execute("ALTER TABLE dim_user ADD COLUMN archetype_slug VARCHAR")
 
 
 # ---------------------------------------------------------------------------
@@ -408,6 +427,10 @@ def _make_persona(rng: random.Random) -> dict:
     channel = rng.choices(["unstop", "whatsapp_dark"], weights=[85, 15], k=1)[0]
     is_tier1 = rng.random() < 0.55
     city = rng.choice(TIER1_CITIES if is_tier1 else TIER2_CITIES)
+    # P0.5: archetype-driven traits. Deterministic by persona_id so each
+    # live-world joiner gets a stable archetype identical to the
+    # corresponding W01 mapping.
+    archetype_slug = archetype_for_persona(persona_id).slug
     return dict(
         user_id=user_id,
         persona_id=persona_id,
@@ -426,10 +449,11 @@ def _make_persona(rng: random.Random) -> dict:
         college=None,
         identity_confidence=1.0,  # single-source, by construction
         identity_flags=["sim_generated"],
-        model_version="sim-v1.0.0",
+        model_version="sim-v1.1.0",
         acquisition_source=channel,
         signup_time=None,  # filled below
-        true_skill=rng.gauss(0.0, 1.0),
+        true_skill=sample_initial_true_skill(persona_id),
+        archetype_slug=archetype_slug,
     )
 
 
@@ -470,12 +494,12 @@ def tick(world: WorldState, *, advance_minutes: int = 60) -> dict:
                    (user_id, full_name, personal_email, college_email, phone_hash,
                     device_fingerprint, city, city_tier, device_type, occupation, age,
                     college, identity_confidence, identity_flags, model_version,
-                    acquisition_source, signup_time, true_skill, _source_system)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    acquisition_source, signup_time, true_skill, archetype_slug, _source_system)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 [p["user_id"], p["full_name"], p["personal_email"], p["college_email"], p["phone_hash"],
                  p["device_fingerprint"], p["city"], p["city_tier"], p["device_type"], p["occupation"], p["age"],
                  p["college"], p["identity_confidence"], p["identity_flags"], p["model_version"],
-                 p["acquisition_source"], p["signup_time"], p["true_skill"], "sim.world"],
+                 p["acquisition_source"], p["signup_time"], p["true_skill"], p.get("archetype_slug"), "sim.world"],
             )
             con.execute(
                 """INSERT INTO fact_acquisition

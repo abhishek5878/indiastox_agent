@@ -49,12 +49,20 @@ def true_skill_df() -> pd.DataFrame:
 
 
 def test_true_skill_landed_in_dim_user(true_skill_df):
-    """N(0, 1) sample should look approximately like N(0, 1)."""
+    """true_skill should be present + non-degenerate.
+
+    Pre-P0.5 sampler was rng.gauss(0, 1); P0.5 swapped to an archetype-mix
+    sampler whose theoretical population std ≈ 0.85 (computed from
+    sum(weight_i * (mean_i² + std_i²)) - (sum(weight_i * mean_i))² across
+    the 20 archetypes). Bounds [0.75, 1.15] cover both the legacy data
+    (pre-regeneration) and the new archetype-mix data; assertion still
+    catches all-zeros / broken sampling.
+    """
     assert len(true_skill_df) >= 1900, f"only {len(true_skill_df)} dim_user rows carry true_skill"
     mean = true_skill_df["true_skill"].mean()
     std = true_skill_df["true_skill"].std()
-    assert abs(mean) < 0.10, f"true_skill mean drifted: {mean:.3f}"
-    assert 0.85 <= std <= 1.15, f"true_skill std out of band: {std:.3f}"
+    assert abs(mean) < 0.15, f"true_skill mean drifted: {mean:.3f}"
+    assert 0.75 <= std <= 1.15, f"true_skill std out of band: {std:.3f}"
 
 
 def test_glicko_mu_correlates_with_true_skill(true_skill_df):

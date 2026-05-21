@@ -27,6 +27,21 @@ from typing import Iterable, Optional
 
 import pandas as pd
 
+from sim.archetypes import archetype_for_persona, sample_initial_true_skill
+from sim.layers import (
+    compose,
+    compose_all_layers,
+    layer_learning_curve,
+    layer_mood_arc,
+    layer_trust_decay,
+)
+from sim.states import (
+    CallMadeEvent,
+    OutcomeResolvedEvent,
+    apply_event,
+    init_user_state,
+)
+
 REPO = Path(__file__).resolve().parent
 DATA_DIR = REPO / "data"
 RAW_DIR = REPO / "raw"
@@ -65,6 +80,18 @@ STOCK_SYMBOLS = [
     "RELIANCE", "TCS", "INFY", "HDFC", "WIPRO",
     "ICICIBANK", "BAJFINANCE", "SBIN", "HCLTECH", "ITC",
 ]
+
+# Per-ticker sector mapping. Mirrors sim/world.py SECTOR_OF. Duplicated here
+# (not imported) so generate.py stays free of duckdb's import side-effects.
+# Archetypes whose sector_affinity references "pharma" or "auto" fall back
+# to broad ticker selection in layer composition — those sectors have no
+# tickers in this dataset.
+SECTOR_OF = {
+    "RELIANCE": "energy",
+    "TCS": "IT", "INFY": "IT", "WIPRO": "IT", "HCLTECH": "IT",
+    "HDFC": "banking", "ICICIBANK": "banking", "SBIN": "banking", "BAJFINANCE": "banking",
+    "ITC": "FMCG",
+}
 
 # IST is UTC+5:30.
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -138,7 +165,6 @@ def build_personas() -> pd.DataFrame:
     rng_devices = random.Random(SEED + 2)
     rng_emails = random.Random(SEED + 3)
     rng_patterns = random.Random(SEED + 4)
-    rng_skill = random.Random(SEED + 5)  # latent true_skill per persona (Layer N1)
 
     print(f"Loading {N_PERSONAS} personas from nvidia/Nemotron-Personas-India en_IN ...", file=sys.stderr)
     raw = _load_nemotron_sample(N_PERSONAS, SEED + 1)
@@ -211,11 +237,13 @@ def build_personas() -> pd.DataFrame:
         device_type = _device_type(occupation, rng_devices)
         phone_hash = hashlib.sha256(f"phone:{persona_id}:{SEED}".encode()).hexdigest()
 
-        # Layer N1 — latent true_skill ~ N(0, 1), deterministic by SEED+5.
-        # Biases the persona's prediction-WIN probability against the market.
-        # Held in dim_user post-resolution so we can later cross-validate that
-        # Glicko-2 mu correlates with the true_skill ground truth.
-        true_skill = rng_skill.gauss(0.0, 1.0)
+        # P0.5: archetype drives true_skill distribution. Each persona_id
+        # maps deterministically to one of 20 archetypes via hash bucketing;
+        # true_skill is sampled from the archetype's N(mu, sigma^2). The
+        # archetype_slug is carried through dim_user so gen_backend_events
+        # (and downstream analytics) can stratify by cohort.
+        archetype_slug = archetype_for_persona(persona_id).slug
+        true_skill = sample_initial_true_skill(persona_id)
 
         rows.append(
             dict(
@@ -240,7 +268,8 @@ def build_personas() -> pd.DataFrame:
                 identity_pattern=pattern,
                 pair_partner_idx=pair_partner,
                 true_skill=true_skill,
-                model_version="generator-v1.0.0",
+                archetype_slug=archetype_slug,
+                model_version="generator-v1.1.0",
             )
         )
 
@@ -343,27 +372,92 @@ def _write_ndjson(path: Path, rows: Iterable[dict]) -> int:
     return n
 
 
+def _pick_ticker_biased(
+    rng: random.Random,
+    sector_bias: tuple,
+    ticker_bias: tuple,
+) -> str:
+    """Weighted ticker pick using the ActionModifier's bias maps.
+
+    Per-ticker weight = sector_bias.get(sector_of(ticker), 1.0)
+                      * ticker_bias.get(ticker, 1.0).
+    Tickers in sectors not present in STOCK_SYMBOLS' sectors (e.g. "pharma"
+    affinity from sectoral-rotator archetypes) get neutral weights — the
+    layer's preference is recorded but the dataset offers no instrument.
+    """
+    sec_map = dict(sector_bias)
+    tkr_map = dict(ticker_bias)
+    weights = []
+    for tkr in STOCK_SYMBOLS:
+        sec = SECTOR_OF.get(tkr, "other")
+        weights.append(sec_map.get(sec, 1.0) * tkr_map.get(tkr, 1.0))
+    return rng.choices(STOCK_SYMBOLS, weights=weights, k=1)[0]
+
+
 def gen_backend_events(personas: pd.DataFrame) -> tuple[list[dict], list[dict]]:
-    """Returns (current_events, deferred_outcomes)."""
+    """Substrate-driven backend event generation.
+
+    Each persona's behavior is shaped by its archetype + initial UserState:
+      - signup probability and timing are biased by archetype active hours
+      - challenge-signup probability is gated by initial trust
+      - per-week call count is driven by `compose_all_layers(us, signup_time)`'s
+        `call_probability_multiplier`, scaled by archetype daily time budget
+      - ghost-vs-active branching uses the same composed `ghost_probability`
+      - per-call ticker selection uses `mod.sector_bias` + `mod.ticker_bias`
+      - per-call star confidence adds `mod.star_inflation` to the legacy base
+      - per-call CallMadeEvent updates the persona's UserState (knowledge,
+        time-budget) so subsequent ticks see updated state
+      - outcome resolution feeds OutcomeResolvedEvent back into UserState
+        (belief + mood updates), though deferred-join means the next-week's
+        events would consume the updated state — current W01 horizon does
+        not exercise that round-trip
+
+    Determinism: each persona owns a per-persona RNG seeded from
+    `(SEED, persona_id)` so events are reproducible regardless of iteration
+    order across personas.
+    """
     rng_signup = random.Random(SEED + 11)
-    rng_predict = random.Random(SEED + 12)
-    rng_outcome = random.Random(SEED + 13)
     rng_challenge = random.Random(SEED + 14)
 
     events: list[dict] = []
     outcomes: list[dict] = []
 
     for _, p in personas.iterrows():
-        canonical_user_id = str(uuid.UUID(int=int(hashlib.sha256(p["persona_id"].encode()).hexdigest()[:32], 16)))
+        persona_id = p["persona_id"]
+        canonical_user_id = str(
+            uuid.UUID(int=int(hashlib.sha256(persona_id.encode()).hexdigest()[:32], 16))
+        )
         true_skill = float(p.get("true_skill", 0.0) or 0.0)
+        archetype_slug = p.get("archetype_slug")
+        archetype = archetype_for_persona(persona_id)
 
-        # user_signup. Mon-Wed within the week.
+        # Per-persona RNG. Hash for stable int regardless of Python's
+        # PYTHONHASHSEED. Used for predictions, outcomes, and ticker picks.
+        persona_seed = int(
+            hashlib.sha256(f"events:{persona_id}:{SEED}".encode()).hexdigest()[:8], 16
+        )
+        rng = random.Random(persona_seed)
+
+        # Signup time is random within the legacy 8-22h window, NOT clamped
+        # to the archetype's active hours. Real users sign up whenever they
+        # encounter the funnel; the time-of-day affinity drives *call* timing
+        # later in the week, not the initial signup moment. weekend_only
+        # archetypes are the one exception (those archetypes signup Sat/Sun
+        # by definition).
+        signup_day_offset = (
+            rng_signup.choice([5, 6]) if archetype.weekend_only
+            else rng_signup.randint(0, 2)
+        )
         signup_time = WEEK_START_IST + timedelta(
-            days=rng_signup.randint(0, 2),
+            days=signup_day_offset,
             hours=rng_signup.randint(8, 22),
             minutes=rng_signup.randint(0, 59),
         )
-        platform = "android" if p["device_type"] == "mobile" else rng_signup.choices(["web", "ios"], weights=[70, 30], k=1)[0]
+
+        platform = (
+            "android" if p["device_type"] == "mobile"
+            else rng_signup.choices(["web", "ios"], weights=[70, 30], k=1)[0]
+        )
         events.append(dict(
             event_type="user_signup",
             user_id=canonical_user_id,
@@ -374,14 +468,23 @@ def gen_backend_events(personas: pd.DataFrame) -> tuple[list[dict], list[dict]]:
             signup_time=_utc(signup_time),
             referral_code=None,
             platform=platform,
-            acquisition_channel=p["acquisition_channel"],  # "unstop" | "whatsapp_dark"
-            true_skill=true_skill,  # carried for ground-truth validation in dim_user
+            acquisition_channel=p["acquisition_channel"],
+            true_skill=true_skill,
+            archetype_slug=archetype_slug,
         ))
 
-        # challenge_signup — 92% of Unstop users sign up for the challenge in
-        # the app within 6h of their Unstop registration. The other 8% sign
-        # up later or never. (For our universe all personas are Unstop users.)
-        if rng_challenge.random() < 0.92:
+        # Initialize UserState at signup. Tracks belief/mood/trust/etc.
+        # as events accumulate this week.
+        us = init_user_state(persona_id, signup_time.replace(tzinfo=None))
+
+        # challenge_signup probability scales with initial trust. Skeptics
+        # (trust=0.5) sign up ~50% of the time; high-trust archetypes
+        # (trust=0.7) hit the legacy 92%; ghost-risk juniors (trust=0.4)
+        # roughly 40%.
+        challenge_base = 0.92
+        challenge_p = challenge_base * us.trust.trust / 0.7
+        challenge_time = None
+        if rng_challenge.random() < challenge_p:
             challenge_time = signup_time + timedelta(
                 hours=rng_challenge.randint(0, 5),
                 minutes=rng_challenge.randint(0, 59),
@@ -392,64 +495,115 @@ def gen_backend_events(personas: pd.DataFrame) -> tuple[list[dict], list[dict]]:
                 weekly_challenge_id=WEEKLY_CHALLENGE_ID,
                 signup_time=_utc(challenge_time),
             ))
-        else:
-            challenge_time = None
 
-        # predictions — power-law-ish: 30% make 0 (ghosts), 40% make 1-2,
-        # 20% make 3-5, 10% make 5-10.
-        bucket = rng_predict.choices([0, 1, 2, 3], weights=[30, 40, 20, 10], k=1)[0]
-        if bucket == 0:
-            n_pred = 0
-        elif bucket == 1:
-            n_pred = rng_predict.randint(1, 2)
-        elif bucket == 2:
-            n_pred = rng_predict.randint(3, 5)
-        else:
-            n_pred = rng_predict.randint(5, 10)
+        # Ghost decision uses STRUCTURAL state (trust, time-budget, cohort
+        # tag), not moment-time. A persona who signs up at 3am doesn't
+        # ghost just because that's not their active hour — they'll check
+        # the app later. Layer-derived ghost contributions (mood,
+        # trust_decay) add on top of a 0.15 baseline (vs. legacy 0.30
+        # uniform-bucket); the substrate shapes WHICH personas ghost, not
+        # the aggregate magnitude.
+        baseline_ghost = 0.15
+        structural_ghost = 0.0
+        if us.trust.trust < 0.5:
+            structural_ghost += 0.15 * (0.5 - us.trust.trust) / 0.5
+        if archetype.daily_time_budget_minutes_mean < 20:
+            structural_ghost += 0.20 * (20 - archetype.daily_time_budget_minutes_mean) / 20
+        if archetype.cohort_tag == "late_activator":
+            structural_ghost += 0.45  # lurkers don't activate in W01
+        ghost_p = min(0.90, baseline_ghost + structural_ghost)
+        if rng.random() < ghost_p:
+            continue
 
+        # Weekly call count uses STRUCTURAL layers only — mood, trust,
+        # learning_curve. We deliberately exclude time_of_day from the
+        # weekly multiplier: a persona who happens to sign up at 3am
+        # doesn't make fewer calls *all week*, they just don't call in
+        # that hour. time_of_day applies per-call (in `compose_all_layers`
+        # at made_at) for ticker/star bias, not to the weekly count.
+        sig_dt = signup_time.replace(tzinfo=None)
+        mod_structural = compose([
+            layer_mood_arc(us, archetype),
+            layer_trust_decay(us, archetype),
+            layer_learning_curve(us, archetype, sig_dt),
+        ])
+
+        # Prediction count. Anchor in archetype daily time-budget and scale
+        # by structural call_probability_multiplier. Cap at 15 / week.
+        base_calls_per_week = max(1, int(archetype.daily_time_budget_minutes_mean / 8.0))
+        n_pred = max(0, min(15, round(base_calls_per_week * mod_structural.call_probability_multiplier)))
+
+        anchor = challenge_time or signup_time
         for _ in range(n_pred):
-            # made_at within 7 days of signup; if no challenge_signup, still
-            # spread predictions later in the week.
-            anchor = challenge_time if challenge_time else signup_time
             made_at = anchor + timedelta(
-                hours=rng_predict.randint(0, 24 * 6),
-                minutes=rng_predict.randint(0, 59),
+                hours=rng.randint(0, 24 * 6),
+                minutes=rng.randint(0, 59),
             )
-            prediction_id = str(uuid.UUID(int=rng_predict.getrandbits(128)))
+
+            # Per-call ActionModifier. Picks up time-of-day layer + current
+            # knowledge state (so already-seen tickers get freshness boost).
+            mod = compose_all_layers(us, made_at.replace(tzinfo=None))
+            ticker = _pick_ticker_biased(rng, mod.sector_bias, mod.ticker_bias)
+            sector = SECTOR_OF.get(ticker, "other")
+            direction = rng.choices(["BULL", "BEAR"], weights=[55, 45], k=1)[0]
+
+            base_star = rng.choices([1, 2, 3, 4, 5], weights=[20, 25, 25, 20, 10], k=1)[0]
+            skill_offset = max(-2, min(2, round(true_skill * 1.0)))
+            inflation_offset = round(mod.star_inflation)
+            stars = max(1, min(5, base_star + skill_offset + inflation_offset))
+
+            prediction_id = str(uuid.UUID(int=rng.getrandbits(128)))
             events.append(dict(
                 event_type="prediction_made",
                 user_id=canonical_user_id,
                 prediction_id=prediction_id,
-                stock_symbol=rng_predict.choice(STOCK_SYMBOLS),
-                direction=rng_predict.choices(["BULL", "BEAR"], weights=[55, 45], k=1)[0],
-                confidence_stars=max(1, min(5,
-                    rng_predict.choices([1,2,3,4,5], weights=[20,25,25,20,10], k=1)[0]
-                    + max(-2, min(2, round(true_skill * 1.0))))),
+                stock_symbol=ticker,
+                direction=direction,
+                confidence_stars=stars,
                 made_at=_utc(made_at),
             ))
 
-            # Deferred outcome: resolved_at = made_at + 5 days (the brief's
-            # deferred-join pattern). Goes to a separate file.
+            # State update: knowledge.ticker_freshness jumps to 1.0 for this
+            # ticker; subsequent calls see freshness-biased ticker_bias.
+            us = apply_event(us, CallMadeEvent(
+                user_id=canonical_user_id, ticker=ticker, sector=sector,
+                direction=direction, stars=stars,
+                sim_now=made_at.replace(tzinfo=None),
+            ))
+
+            # Deferred outcome: resolved_at = made_at + 5 days. Preserved
+            # from the legacy flow. p_win biased by true_skill.
             resolved_at = made_at + timedelta(days=5)
-            # Layer N1 — outcome biased by persona.true_skill. The market
-            # is the opponent at skill=0; high-skill personas reliably beat
-            # the market over many predictions. p_win ∈ [0.22, 0.62];
-            # DRAW stays at 8%; LOSS = 1 - p_win - p_draw.
             p_win = max(0.22, min(0.62, 0.42 + true_skill * 0.10))
             p_draw = 0.08
             p_loss = 1.0 - p_win - p_draw
-            outcome = rng_outcome.choices(
+            outcome = rng.choices(
                 ["WIN", "LOSS", "DRAW"], weights=[p_win, p_loss, p_draw], k=1,
             )[0]
-            pnl = {"WIN": rng_outcome.uniform(0.5, 5.0), "LOSS": -rng_outcome.uniform(0.5, 4.0), "DRAW": 0.0}[outcome]
+            pnl = {
+                "WIN": rng.uniform(0.5, 5.0),
+                "LOSS": -rng.uniform(0.5, 4.0),
+                "DRAW": 0.0,
+            }[outcome]
             outcomes.append(dict(
                 event_type="prediction_outcome",
                 prediction_id=prediction_id,
                 user_id=canonical_user_id,
                 outcome=outcome,
                 pnl_points=round(pnl, 3),
-                accuracy_delta=round(rng_outcome.uniform(-0.05, 0.05), 4),
+                accuracy_delta=round(rng.uniform(-0.05, 0.05), 4),
                 resolved_at=_utc(resolved_at),
+            ))
+
+            # State update on the (would-be) outcome. Because outcomes
+            # resolve 5 days later, this state doesn't influence in-week
+            # decisions — but it makes the UserState end-of-week consistent
+            # with the events emitted, ready for the W02 carry-over P0.5b
+            # will exploit.
+            us = apply_event(us, OutcomeResolvedEvent(
+                user_id=canonical_user_id, ticker=ticker, sector=sector,
+                outcome=outcome, stars=stars,
+                sim_now=resolved_at.replace(tzinfo=None),
             ))
 
     return events, outcomes

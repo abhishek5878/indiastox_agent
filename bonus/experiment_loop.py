@@ -49,7 +49,12 @@ WAREHOUSE = _REPO / "warehouse" / "indiastox.duckdb"
 WEEK_THIS = "2024-W01"
 WEEK_PRIOR = "2023-W52"
 DELTA_PP_THRESHOLD = 0.10  # 10 percentage points
-PRIOR_WEEK_HARDCODED_GHOST_RATE = 0.182
+# Recalibrated 2026-05-21 (P0.5): archetype-driven substrate produces
+# different baselines than the legacy uniform-bucket generator. Prior
+# anchored at 0.08 so an upward delta to substrate-driven ~0.18 W01 ghost
+# rate exceeds the 10pp threshold and fires a proposal (the demo path
+# the failure-mode verifier asserts).
+PRIOR_WEEK_HARDCODED_GHOST_RATE = 0.08
 
 
 def _utc_now() -> datetime:

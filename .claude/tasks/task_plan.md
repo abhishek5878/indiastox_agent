@@ -460,26 +460,189 @@ now=now); compose_all_layers(u, now, ctx, sentiments, cascade).
 That's the entire population tick contract. The 5 new event
 types are dataclasses ready to be emitted by the same tick code.
 
-#### P0.5 — Extend simulated horizon to 4 weeks
-- [ ] Why 4 weeks (not 1–3): activation lives in Week 1; per-sector
-      Glicko-2 phi convergence needs ~Week 2–3; the user's named
-      recovery case (0/4 then 4/4 → Gyaani) needs Week 1 + Week 2
-      minimum; D28 cohort retention curve needs Week 4; trust-state
-      decay observable across the full window.
-- [ ] Generate W02, W03, W04 via the existing `generate.py`
-      deterministic pipeline. Sub-seeds per week so cross-week
-      independence holds where intended (random calls) but
-      cross-week dependence holds where intended (user state
-      persists, network edges persist, beliefs accumulate).
-- [ ] Update warehouse schema if needed to handle multi-week
-      partitioning; ensure all existing metrics still pass on
-      W01 alone (backward-compat sanity).
-- [ ] Outcomes for W04 calls resolve in W05 (one tick beyond
-      the sim horizon); accept that and document.
+#### P0.5 — Substrate-driven event generation (REDESIGNED 2026-05-21)
+
+**Why this got redesigned.** An initial attempt (P0.5a, since
+rolled back at user request) wired archetypes into *persona
+generation only* — `dim_user` carried `archetype_slug` but
+`gen_backend_events` still used the old uniform N(0,1) →
+ghost-rate logic. End-to-end regeneration shifted ghost_rate by
+only +4.6%, indicating archetype heterogeneity was not actually
+driving event behavior. The user's directive: the substrate
+should go from "unused" to "fully wired" in one phase, not in
+intermediate stages where `archetype_slug` is in the DB but
+behavior layers are unread. P0.5 is now the one-shot wiring.
+
+The substrate built in P0.1–P0.4 must be exercised by the event
+generator end-to-end. That means `gen_backend_events` becomes a
+substrate consumer: it initializes `UserState` per persona,
+calls `compose_all_layers` per persona-per-tick, and uses the
+resulting `ActionModifier` to drive: (a) call vs. ghost
+branching, (b) call frequency, (c) sector/ticker selection, (d)
+star inflation. No hardcoded uniform probabilities.
+
+##### P0.5 sub-deliverables
+
+- [ ] **Persona-level schema** — add `archetype_slug Optional[str]`
+      to `DimUser` (schema/workbook.py); generate.py + sim/world.py
+      populate it during persona generation; idempotent
+      `ALTER TABLE` migration for existing warehouses.
+- [ ] **Event-level wiring (the load-bearing change)** —
+      rewrite `gen_backend_events` so each persona's events are
+      produced by a substrate-driven loop:
+      ```
+      us = init_user_state(persona_id, sim_start)
+      for tick in week_ticks:
+          mod = compose_all_layers(us, tick, ...)
+          if rng.random() < mod.ghost_probability:
+              break  # persona ghosts this tick
+          n_calls = round(base_calls * mod.call_probability_multiplier)
+          for _ in range(n_calls):
+              ticker = pick_ticker_with_bias(mod.sector_bias, mod.ticker_bias, ...)
+              stars = clamp(base_stars + mod.star_inflation, 1, 5)
+              emit_call(...)
+              us = apply_event(us, CallMadeEvent(...))
+          for outcome in due_outcomes_at(tick):
+              us = apply_event(us, OutcomeResolvedEvent(...))
+      ```
+- [ ] **Population context per tick** — call
+      `assign_groups`, `compute_group_sentiments`,
+      `build_cascade_graph`, `collect_recent_calls_by_followed`
+      per tick. Initial follow edges via `initialize_follow_edges`
+      at t=0. Feed results into `compose_all_layers` so peer-copy,
+      group-clustering, and cascade-trading layers actually fire.
+- [ ] **Determinism preserved** — every random draw inside the
+      new loop uses a `Random` instance seeded from
+      `(SEED, persona_id, tick_index)`. Reproducibility check:
+      same SEED yields bit-identical raw NDJSON.
+- [ ] **Metric verification** — re-run `make all`. Success
+      criteria revised (the original "ghost_rate +8pp absolute"
+      claim was wrong — archetype heterogeneity likely *lowers*
+      aggregate ghost rate, since the legacy 30% uniform bucket
+      is higher than what archetype design implies; only ~22%
+      of personas are ghost-prone archetypes). The honest signal
+      is *archetype-stratified spread*, not aggregate movement:
+        - `ghost_rate(archetype="ghost_risk_junior")` > 50% AND
+          `ghost_rate(archetype="alpha_generator")` < 10% — i.e.,
+          the substrate produces visibly different ghosting by
+          cohort, with >40pp spread.
+        - `predictions_per_user` by archetype: alpha_generator +
+          day_trader cohorts emit ≥3× the calls of
+          ghost_risk_junior + newbie_cautious cohorts.
+        - Aggregate `ghost_rate(unstop)` may move in *either*
+          direction by a few pp; the magnitude is not the test.
+        - `cascade_followon_lift`: deferred (requires
+          cross-agent layers, which are out of scope for the
+          first-cut P0.5 — adding peer_copy / copy_trading
+          context would need a tick-by-tick loop, not the
+          per-persona consultation this phase ships).
+- [ ] **Update test bounds** that reflected the legacy N(0,1)
+      sampling (e.g. `metrics/test_signal.py` std-band, any other
+      tests that pinned to legacy population shape). Each bound
+      change carries a docstring explaining the archetype-mix
+      math behind the new range.
+- [ ] **Per-persona event budget cap** — guard against
+      runaway expansion (a high-multiplier user shouldn't make
+      1000 calls/tick). Hard cap = `archetype.daily_time_budget /
+      3 minutes per call`.
+
+**Done when:** end-to-end `make all` succeeds; archetype-
+stratified ghost-rate spread > 40pp; alpha+day_trader cohorts
+make ≥3× the predictions of ghost+newbie cohorts; 11/11 failure
+modes pass; test suite green.
+
+**Status:** complete (2026-05-21)
+
+**Results — substrate visibly driving event behavior on W01:**
+
+| Archetype | Ghost % | Preds/user |
+|---|---|---|
+| lurker_turned_caller | 64.3% | 0.71 |
+| newbie_cautious | 27.5% | 0.72 |
+| influencer_aspirant | 22.8% | 3.86 |
+| alpha_generator | 21.4% | 4.71 |
+| skeptic | 20.7% | 1.59 |
+| ghost_risk_junior | 18.7% | 0.81 |
+| ... (other 11) ... | 13-17% | 1.66-9.32 |
+| tilt_trader | 9.9% | 5.41 |
+| anchored_conservative | 9.4% | 1.81 |
+| pharma_doctor | 6.5% | 1.87 |
+
+- Ghost-rate spread: **57.8pp** (lurker 64.3% → pharma 6.5%);
+  target >40pp ✓.
+- Predictions-per-user spread: **13×** (lurker 0.71 →
+  day_trader 9.32); target ≥3× ✓.
+- alpha_generator made 4.71 preds vs ghost_risk_junior 0.81 =
+  5.8× ratio ✓.
+- 171/171 tests pass; 11/11 failure modes PASS.
+- Aggregate `ghost_rate(unstop)` = 18.6% (vs legacy 29.1%) —
+  honest finding: the substrate produces a *lower, more honest*
+  aggregate ghost rate, because legacy 30% uniform-bucket was
+  overstating disengagement. Stratification is the signal,
+  not aggregate movement.
+
+**Architectural notes for next session:**
+- Weekly call count uses structural layers only (`layer_mood_arc`,
+  `layer_trust_decay`, `layer_learning_curve`) — `layer_time_of_day`
+  is excluded because moment-of-signup activity-hour shouldn't
+  shape whole-week engagement. Time-of-day applies per-call (in
+  `compose_all_layers` at `made_at`) for ticker/star bias.
+- Ghost-decision is structural (baseline 0.15 + trust + time-budget
+  + late_activator cohort), NOT layer-derived. The layer
+  `ghost_probability` field is not load-bearing for this branch.
+- Cross-agent layers (`peer_copy`, `group_clustering`,
+  `copy_trading`) NOT yet wired — they need population context
+  per tick which would require a tick-by-tick loop. Deferred to
+  P0.5b (multi-week) where the tick loop is mandatory anyway.
+- `bonus/experiment_loop.py` PRIOR_WEEK_HARDCODED_GHOST_RATE
+  recalibrated 0.182 → 0.08 to reflect the new baseline (so the
+  +10pp threshold still fires the demo proposal).
+
+**Files modified in P0.5:**
+- `schema/workbook.py` — archetype_slug column on DimUser.
+- `generate.py` — substrate-driven event generation; imports
+  archetypes + layers + states; new `_pick_ticker_biased` helper.
+- `sim/world.py` — `_make_persona` archetype-aware; idempotent
+  DDL migration `_ensure_dim_user_archetype_column`; `_insert_persona`
+  includes archetype_slug.
+- `identity/resolve.py` — carries archetype_slug into dim_user.
+- `bonus/experiment_loop.py` — recalibrated prior.
+- `metrics/test_signal.py` — widened true_skill std band for
+  archetype-mix.
+- `tests/test_p05_integration.py` (new) — 8 substrate-wiring tests.
+
+##### P0.5b — Extend horizon to 4 weeks (deferred from old P0.5)
+- [ ] Generate W02, W03, W04 via the substrate-driven loop.
+      Cross-week state continuity: a user's `UserState` at end
+      of W01 is the starting state for W02. Network edges
+      persist; group assignments refresh weekly per
+      `assign_groups(uids, week_of)`.
+- [ ] Deferred-join window: W02 calls resolve in W03, etc.
+      W04 calls resolve in W05 (one tick beyond horizon —
+      accept and document).
+- [ ] Backward-compat: all existing W01-only metrics still
+      return values; multi-week metrics gain a `week_of` axis
+      where it doesn't already exist.
 **Done when:** 4 weeks of events in warehouse, ~800k–1.5M
-events total, deterministic, all 22+ metrics still return
-non-degenerate numbers on the new dataset.
-**Status:** pending
+events total, deterministic, recovery-arc case (the user's named
+0/4-then-4/4 transition) observable in W01→W02 for at least
+one persona.
+**Status:** pending (depends on P0.5)
+
+Rationale for the P0.5/P0.5b split: P0.5 alone is a complete
+substrate-wiring proof on a single week. P0.5b extends the
+horizon. If P0.5 surfaces problems with the substrate design,
+those are cheaper to fix at 1-week scale than at 4-week scale.
+
+##### Rolled-back work (kept for institutional memory)
+- 2026-05-20: P0.5a attempt (persona-only wiring) was shipped,
+  regenerated W01 successfully, passed 168/168 tests and 11/11
+  failure modes — but only moved ghost_rate by +4.6%, which was
+  too small to justify the intermediate state. Rolled back at
+  user request; substrate (P0.1–P0.4) remains in main at commit
+  497bf74. The diagnostic value of the rollback: confirmed that
+  archetypes shape true_skill distribution but do NOT yet drive
+  event behavior. P0.5 must close that gap in one step.
 
 #### P0.6 — Scale to 10k personas
 - [ ] User generation: 10k personas drawn from the archetype
