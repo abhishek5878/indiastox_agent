@@ -230,3 +230,75 @@ When writing a lesson, ask: *would this pattern-match on the next occurrence?* "
   *body* of the message via the user's actual ticker, sector,
   and last outcome — not just the surrounding template. Stylized
   numbers are necessary but not sufficient.
+
+- 2026-05-22 [PROCESS] When designing substrate-level work, propose
+  ONE substantive design with adversarial counterarguments, not three
+  dial settings on a menu. The user pushed back: "broad paths please
+  we need to think deeper" — three "conservative / moderate /
+  aggressive" options were lazy menu-picking, not depth. Rule: menus
+  are for picking among well-understood paths; for design decisions,
+  produce the design + the strongest counterarguments + the trap to
+  watch for. Only use enumerable options when the trade-offs are
+  genuinely orthogonal (architecture: SQLite vs Postgres) and the
+  user has the context to choose. For substrate depth/horizon/scope,
+  always propose then defend.
+
+- 2026-05-22 [ARCH] When wiring a new substrate into existing code,
+  ship the FULL wiring or none — intermediate states are confusing
+  and get rolled back. P0.5a wired archetypes into persona generation
+  only (archetype_slug in dim_user) but `gen_backend_events` still
+  used the legacy uniform 30% ghost bucket. Tests passed, failure
+  modes passed, metrics moved 4.6% — but the substrate wasn't
+  actually doing work, and the DB state mismatched user intent.
+  Rule: if substrate goes from "unused" to "used", make it one
+  commit. Persona-level wiring without event-level wiring is a
+  confusing middle state that misleads consumers and reviewers.
+
+- 2026-05-22 [METHODOLOGY] For any classification rule (Gyaani, reward
+  axes, segments), run candidate variants against the substrate FIRST
+  and observe which archetypes/cohorts the rule picks. Only then
+  commit thresholds to code. Three failure modes the meta-pattern
+  exploration caught: (a) phi-only Gyaani rewards day_traders 100%
+  but their win-rate is 0.406 — phi rewards clicking; (b) strict
+  Gyaani (mu>=p90 AND phi<150 AND n>=10) produces 1 graduate on
+  W01 because n caps at 11 — unreachable; (c) medium rule has
+  fomo_cascader contamination at n=5 sample size. The two-tier
+  resolution emerged from observing each failure, not from
+  top-down design. User's framing: "the Facebook way" — define a
+  rule, let the meta-pattern show, then lock in. Apply this
+  exploration-first pattern to every classification gate.
+
+- 2026-05-22 [METHODOLOGY] When sample-size gates feel restrictive,
+  audit the relaxation BEFORE relaxing — measure how much of the new
+  positive signal is noise. P2 reward-axes accuracy n_min=3 left 5
+  zero-aspirant cohorts uncovered, tempting relaxation to n_min=2.
+  Audit: 430 more scorable users, 109 new "perfect" scores, but 70
+  (64.2%) were users with exactly 2 wins of 2 lucky calls. For the
+  cohorts we wanted to cover (pharma/skeptic/anchored/diversifier/
+  lurker), 100% of the new perfects were noise. The correct fix was
+  a separate `presence` axis (no skill claim, no sample-size gate)
+  — semantically distinct from the skill axes. Rule: sample-size
+  gates protect against luck; if a real user need exists below the
+  gate, build a separate metric that doesn't claim what it can't
+  measure.
+
+- 2026-05-22 [ARCH] Single source of truth for every classification
+  rule. Gyaani has `classify_gyaani(mu, phi, n_resolved)`; reward
+  axes have `_SCORERS` dispatch table; segments have `_SCORERS`
+  dispatch table. Aggregators (share metrics, per-user tools, tests)
+  all call into the same function — threshold/scoring logic never
+  duplicates. Rule: when shipping a multi-tier rule, the tier
+  thresholds belong to a single dict/constant + a single pure
+  function. Population aggregates, per-user tools, and SQL
+  cross-checks all consult that one function. If you find yourself
+  copying threshold values into a second place, stop.
+
+- 2026-05-22 [ARCH] When the substrate or data isn't there yet,
+  ship the metric/axis/segment as an EXPLICIT stub with
+  `status='stub_pending_X'` visible in outputs, not as a silent
+  zero. P2 reward axes left influence + discovery stubbed; P3
+  shadows stubbed; P4 calls_with_explanation_rate stubbed at
+  version "0.0.0-stub". Consumers (agents, dashboards, future
+  reviewers) can flag the gap honestly. Rule: a silently-zero
+  metric pretends to measure something it can't; an explicit stub
+  documents the gap and the unlock path. Always prefer the stub.

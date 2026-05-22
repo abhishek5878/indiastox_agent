@@ -527,3 +527,104 @@ single-file change away; none require architectural decisions.
 The natural next slice is closing those three loops, or moving on to
 real-data integration (replacing W01 synthetic events with a live
 NDJSON tail). Both are out of scope for "demo-ready".
+
+## 2026-05-22 — Post-meeting execution: P0.5 + P1 + P2 + P3 + P4 shipped
+
+The strategy meeting on 2026-05-20 produced seven umbrella themes. This
+session executed the substrate phases of that plan: archetype-driven
+event generation (P0.5), two-tier Gyaani definition (P1), 8-axis
+reward architecture with presence + threshold audit (P2), 8-segment
+behavior classifier (P3), and four attention->accuracy headline
+metrics (P4). 7 commits, all green.
+
+### What shipped (in commit order)
+
+- `bfda3ec` feat(sim): wire archetype substrate into event generation
+  (P0.5). Substrate built in 497bf74 (P0.1-P0.4) was unused by the
+  data pipeline; this turn rewrote `gen_backend_events` as a
+  substrate-driven loop. Weekly call count derived from structural
+  layers (mood, trust, learning) anchored in archetype time-budget;
+  per-call ticker/star bias from layered ActionModifier; ghost
+  decision from structural state baseline 0.15 plus trust/time-budget
+  contributions. The earlier P0.5a (persona-only wiring) was shipped
+  then rolled back at user request because the intermediate state
+  (archetype_slug in DB but no behavior) was confusing — see
+  [PROCESS] lesson below. Final ghost spread: 57.8pp by archetype;
+  preds/user spread: 13x. Substrate now visibly drives behavior.
+
+- `2926bd1` feat(metrics): ship two-tier Gyaani definition (P1).
+  Followed the user's directive "define by a rule, let the meta-pattern
+  show, then lock in — the Facebook way of growth maximising."
+  Exploration-first: applied four candidate rules against W01 first
+  (phi-only rewards volume not skill; strict needs multi-week;
+  medium has FOMO contamination). Locked a two-tier design:
+  aspirant (mu>=1500 AND phi<200 AND n>=3) at 32.0% — the growth
+  slope; locked (mu>=1686 AND phi<150 AND n>=10) at 0.08% — the
+  scarce badge. `classify_gyaani` is the single source of truth.
+  `gyaani_status(user_id)` surfaces gaps_to_locked for personalised
+  nudges.
+
+- `b74244a` + `9740890` + `4903801` (P2 three-commit arc):
+  - Baseline 7-axis reward architecture: accuracy/calibration/
+    coverage/consistency/recovery + influence/discovery stubs.
+  - Meta-pattern audit surfaced that 5 zero-aspirant cohorts
+    (pharma_doctor, skeptic, anchored_conservative, diversifier,
+    lurker_turned_caller) earn zero on every axis because their
+    W01 call counts fall below sample-size gates.
+  - Added `presence` axis (8th) with `log1p(n) / log1p(10)` scoring,
+    no sample-size gate. Closes the gap: those 5 cohorts now covered
+    31-84%.
+  - Threshold audit: relaxing accuracy n_min 3->2 adds 430 scorable
+    users but 64.2% of new "perfect" scores are 2-of-2 lucky;
+    for the 5 zero-aspirant cohorts the contamination is 100%.
+    Presence (no skill claim) was the correct gap-fix; threshold
+    relaxation would mislead.
+
+- `976ad7b` feat(metrics): ship 8-segment behavior classifier (P3).
+  Replaces demographic dashboard slicing. 7 segments real
+  (ghosted, cooled_off, tilted, alphas, anchored, concentrators,
+  diversifiers); 1 stub (shadows — needs copy_call edges from P0.5b).
+  Meta-pattern validates archetype design: day_trader -> 54%
+  Diversifiers; weekend_casual -> 65% Ghosted; lurker -> 69%
+  Ghosted. 5 low-volume cohorts show "primary_segment=None" 63-84%
+  — pre-classification users routed through P1 nudges or P2 presence.
+
+- `ad7bba4` feat(metrics): ship attention->accuracy headline metrics
+  (P4). Four metrics replacing WAU/session-length/calls-made/DAU:
+  - weekly_active_callers_calibrated: 113.45 vs 793 raw active —
+    the 85% attention-vs-accuracy gap in one number.
+  - high_confidence_call_ratio: 46.0% — high-stars not yet better
+    than market on W01.
+  - daily_gyaani_aspirant_count: W01 growth curve 0->0->3->44->108->
+    213->324 (1 locked on day 7). The Facebook accelerating slope.
+  - calls_with_explanation_rate: STUB pending fact_prediction.rationale
+    schema field.
+
+### Numbers (end of session)
+
+- 247/247 tests pass (60 new this session across P0.5/P1/P2/P3/P4)
+- 11/11 failure modes PASS
+- Git: 7 commits on main, none pushed to remote yet
+- Substrate now answers 7 distinct questions about any user
+  (is X a Gyaani? how close? what is X strong at? what kind of
+  user? how many Gyaanis today? how much active = signal? are
+  high-star calls signal?) via uniform `(user_id, week_of)`
+  interface
+
+### Honest scope boundaries (deferred to P0.5b)
+
+- Per-sector Gyaani (P1b) — needs (user, sector) Glicko-2 ratings
+  + multi-week phi convergence.
+- influence axis (P2) — needs copy_call edges from cross-agent
+  peer_copy layer.
+- discovery axis (P2) — needs ticker-popularity time series.
+- shadows segment (P3) — same copy_call dependency.
+- calls_with_explanation_rate (P4) — needs schema extension.
+
+### Status
+
+P0.5, P1, P2, P3, P4 complete; no phases left in_progress this
+session. Remaining substrate work: P0.5b (multi-week + cross-agent),
+P5 (frontend funnel page), P6 (good-day activation analysis),
+P7 (insights extractor + growth-hack experiment). P0.5b is the
+unlock for the 4 honest stubs above; P5-P7 are independent.
