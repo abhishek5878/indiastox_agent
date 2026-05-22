@@ -769,25 +769,80 @@ extending `metrics/skill.py::compute_ratings()` to emit a
 **Status:** complete (global two-tier rule shipped); per-sector
 extension is P1b, gated on P0.5b multi-week data.
 
-### P2: Reward architecture — 7 reward axes
-- [ ] Formalize the 7 orthogonal axes already implicit in the sim
-      (accuracy, calibration, coverage, consistency, influence,
-      recovery, discovery) as a typed `RewardAxis` enum and a
-      per-user, per-axis score function.
-- [ ] New table or view: `user_reward_axes(user_id, axis, score,
-      version, computed_at)` — every modeled number carries
-      version per the substrate invariant.
-- [ ] New metric: `reward_axis_distribution(axis)` showing
-      population distribution (so we can see if any axis is
-      degenerate / not yet earning reward).
-- [ ] Tool surface: `user_fingerprint(user_id)` → 7-axis vector +
-      Gyaani sector map. Replaces single-mu "score me" anti-pattern.
-- [ ] Frontend behavioral-fingerprint chart already exists
-      (S195/S196); extend it to render all 7 axes, not just mu.
-**Done when:** a 0/4 user in the prior week still has a non-zero
-*recovery* and *coverage* axis; the dashboard shows them as
-visibly active despite being non-Gyaani.
-**Status:** pending
+### P2: Reward architecture — 8 reward axes (shipped 2026-05-22)
+
+The plan called for 7 axes; the shipped design is 8 — adding
+`presence` after the W01 meta-pattern surfaced a gap (see below).
+
+**Architecture:**
+- `metrics/reward_axes.py` — single-source-of-truth pure scoring
+  functions per axis. `_SCORERS` dispatch table maps axis name →
+  function so consumer code never branches on axis names.
+- `user_reward_axes(user_id, week_of)` aggregator returns the 8-axis
+  fingerprint dict + `top_axis` (excluding stubs) + `top_score`.
+  Agents call this to answer "what is X strong at?".
+- Sample-size gates per axis: accuracy/calibration/coverage `n>=3`,
+  consistency `n>=4` (needs >=3 gaps), recovery `n>=2` post-loss,
+  presence NONE (the load-bearing exception).
+- All axes return `[0, 1]` so scores are comparable across axes.
+- `REWARD_AXES_VERSION = "1.0.0"` exposed for the version invariant.
+
+**The 8 axes:**
+
+Real on W01 (6):
+- accuracy — rescaled win-rate; 0.5 win-rate → 0, 1.0 → 1.0
+- calibration — Brier-style stars-vs-outcome; 0 Brier → 1.0
+- coverage — distinct LIVE_SECTORS / total LIVE_SECTORS
+- consistency — 1 - CV(inter-call-gaps); regular callers earn high
+- recovery — win-rate of calls after first LOSS (the 0/4→4/4 case)
+- presence — `log1p(n_calls) / log1p(10)`; first call → 0.29
+
+Stubbed (2, P0.5b unlocks):
+- influence — needs copy_call edges from cross-agent layers
+- discovery — needs ticker-popularity time series
+
+**Meta-pattern (W01, post-presence):**
+
+13 archetypes earn meaningful rewards across multiple axes (alpha
+77.4% real-axis signal, tilt 90.9%, day_trader 83.3%). The 5
+zero-aspirant cohorts surfaced by P1 are now covered too:
+
+| Cohort                       | Pre-presence | Post-presence |
+|------------------------------|--------------|----------------|
+| pharma_doctor                | 0%           | 84.0%         |
+| anchored_conservative        | 0%           | 83.1%         |
+| diversifier_index_investor   | 0%           | 81.0%         |
+| skeptic                      | 0%           | 77.8%         |
+| lurker_turned_caller         | 0%           | 31.0% (rest made 0 calls)|
+
+For all five, `presence` is `top_axis`. The 69% of lurkers who
+remain uncovered made literally zero calls in W01 — they're
+genuinely absent, not mismeasured.
+
+**Threshold audit (recorded for institutional memory):**
+
+Tested relaxing accuracy `n_min` from 3 → 2 to see whether the gap
+could be closed by lowering gates instead of adding presence.
+Result: 430 more scorable users, of which 109 score 1.0 (perfect)
+— but 70 of those 109 (64.2%) are users with exactly 2 wins of 2
+lucky calls. For pharma_doctor / skeptic / diversifier /
+anchored / lurker, 100% of the new "perfects" are n=2 luck.
+**Verdict: thresholds are correct. Presence (a separate
+no-skill-claim axis) was the right answer; threshold relaxation
+would actively mislead agents reading the meta-pattern.**
+
+**Frontend dashboard extension deferred:** the agent-side tool
+surface and metric layer ship now; rendering the 8-axis
+fingerprint on the existing behavioral chart (S195/S196) is a
+small follow-up.
+
+**P0.5b dependency:** influence + discovery axes stay stubbed until
+P0.5b's tick-by-tick loop emits copy_call edges and maintains
+ticker-popularity windows across weeks.
+
+**Status:** complete (6 of 8 axes real on W01; 2 honestly stubbed
+pending P0.5b; presence + audit recorded; 28 reward-axes tests
+plus 212/212 in the full suite pass).
 
 ### P3: Behavior types — 8 measurable segments
 - [ ] Classifier in `sim/` (or `metrics/segments.py` new) that
