@@ -27,6 +27,7 @@ from metrics.reward_axes import (
     score_coverage,
     score_discovery,
     score_influence,
+    score_presence,
     score_recovery,
     user_reward_axes,
 )
@@ -52,9 +53,10 @@ def _make_call(ts: datetime, stock: str, stars: int, outcome: str | None) -> tup
 # ---------------------------------------------------------------------------
 
 
-def test_seven_axes() -> None:
-    assert len(AXES) == 7
+def test_eight_axes() -> None:
+    assert len(AXES) == 8
     assert set(AXES) == set(_SCORERS.keys())
+    assert "presence" in AXES
 
 
 def test_rule_version_exposed() -> None:
@@ -232,6 +234,38 @@ def test_recovery_loss_then_loss_zero() -> None:
 # ---------------------------------------------------------------------------
 # Stub axes
 # ---------------------------------------------------------------------------
+
+
+def test_presence_one_call_nonzero() -> None:
+    """The whole point: 1 call should produce a positive presence score."""
+    out = score_presence([_make_call(datetime(2024, 1, 1, 10), "TCS", 3, None)])
+    assert out["score"] > 0.0
+    assert out["confidence_low"] is False
+
+
+def test_presence_zero_calls_returns_zero() -> None:
+    out = score_presence([])
+    assert out["score"] == 0.0
+    assert out["confidence_low"] is True
+
+
+def test_presence_saturates_at_high_volume() -> None:
+    """20 calls should saturate at 1.0; 50 calls also 1.0 (clamped)."""
+    base = datetime(2024, 1, 1, 10)
+    calls = [_make_call(base + timedelta(hours=i), "TCS", 3, "WIN") for i in range(50)]
+    out = score_presence(calls)
+    assert out["score"] == 1.0
+
+
+def test_presence_monotone() -> None:
+    """More calls => strictly higher (or equal at saturation) score."""
+    base = datetime(2024, 1, 1, 10)
+    prev = 0.0
+    for n in (1, 2, 3, 5, 8, 10):
+        calls = [_make_call(base + timedelta(hours=i), "TCS", 3, "WIN") for i in range(n)]
+        s = score_presence(calls)["score"]
+        assert s >= prev, f"presence not monotone at n={n}: {s} < {prev}"
+        prev = s
 
 
 def test_influence_stubbed() -> None:

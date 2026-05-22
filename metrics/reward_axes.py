@@ -49,13 +49,17 @@ WAREHOUSE_DB = _REPO / "warehouse" / "indiastox.duckdb"
 
 REWARD_AXES_VERSION = "1.0.0"
 
-# All seven axes named here so a consumer can iterate without typo risk.
+# All eight axes named here so a consumer can iterate without typo risk.
+# Order is by semantic family: quality (accuracy/calibration), breadth
+# (coverage), behavior (consistency/recovery/presence), social (influence),
+# market (discovery). The first six are real on W01; the last two are stubs.
 AXES: Tuple[str, ...] = (
     "accuracy",       # real on W01: win-rate over resolved calls
     "calibration",    # real on W01: agreement between stars and outcome
     "coverage",       # real on W01: sector breadth
     "consistency",    # real on W01: temporal regularity of calls
     "recovery",       # real on W01: win-rate of post-loss calls
+    "presence",       # real on W01: rewards just showing up (covers low-volume cohorts)
     "influence",      # stub: needs copy_call edges from P0.5b
     "discovery",      # stub: needs ticker-popularity over time
 )
@@ -222,6 +226,33 @@ def score_recovery(calls: list[tuple]) -> dict:
     return dict(score=min(1.0, score), n=len(post_loss), confidence_low=False)
 
 
+def score_presence(calls: list[tuple]) -> dict:
+    """Rewards showing up — the Facebook "you made your first call" axis.
+
+    This exists to close the gap surfaced by the P2 baseline meta-pattern:
+    the five zero-aspirant Gyaani cohorts (pharma_doctor, skeptic,
+    anchored_conservative, diversifier_index_investor, lurker_turned_caller)
+    score zero on every other axis because their W01 call counts fall
+    below the sample-size gates. Without a presence axis, the reward
+    layer leaves these cohorts unmeasurable.
+
+    Scoring: log(1 + n_calls) / log(1 + N_CALLS_FOR_FULL_PRESENCE), so
+    the first few calls produce a steep payoff (the Facebook activation
+    curve) and the function saturates at the 10-calls/week ceiling.
+
+    No sample-size gate: even one call earns a non-trivial reward
+    (~0.30). That's the load-bearing semantic — presence is the one
+    axis that ought to nonzero on the very first action.
+    """
+    import math
+    n = len(calls)
+    if n <= 0:
+        return dict(score=0.0, n=0, confidence_low=True)
+    N_FULL = 10
+    score = math.log1p(n) / math.log1p(N_FULL)
+    return dict(score=min(1.0, score), n=n, confidence_low=False)
+
+
 def score_influence(calls: list[tuple]) -> dict:
     """STUB. Influence requires copy_call edges from the cross-agent
     layers (P0.5b). Today the substrate does not emit copy events, so
@@ -248,6 +279,7 @@ _SCORERS = {
     "coverage": score_coverage,
     "consistency": score_consistency,
     "recovery": score_recovery,
+    "presence": score_presence,
     "influence": score_influence,
     "discovery": score_discovery,
 }
