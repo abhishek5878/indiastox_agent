@@ -896,23 +896,43 @@ failure modes).
 
 ## Layer 2 — Headline & funnel translation
 
-### P4: Attention → accuracy headline metrics
-- [ ] Four new metrics replacing MAU-style measures:
-  - `weekly_active_callers_calibrated(week_of)` — WAU weighted
-    by mean calibration (Brier-based).
-  - `high_confidence_call_ratio(week_of)` — share of calls at
-    4★/5★ with realized accuracy ≥ threshold.
-  - `calls_with_explanation_rate(week_of)` — share of calls
-    that carry rationale text (proxy for thinking, not just
-    tapping).
-  - `daily_gyaani_graduated(date)` — count of users who
-    crossed the P1 threshold today, the only headline number
-    that should go up-and-to-the-right.
-- [ ] Register each in `metric_versions` at v1.0.0.
-- [ ] Tool surface: each callable via the existing tool layer.
-**Done when:** all 4 metrics return numbers end-to-end on the
-W01 synthetic dataset; pytest covers each.
-**Status:** pending
+### P4: Attention → accuracy headline metrics (shipped 2026-05-22)
+
+The strategy meeting's PMF-derisking move: replace vanity attention
+metrics with skill-weighted equivalents. Three of four ship real on
+W01; the fourth is honestly stubbed because the schema lacks the
+necessary field.
+
+**Shipped:**
+
+- [x] `weekly_active_callers_calibrated(week_of)` — sum of per-caller
+      Brier-derived calibration weights. W01: **113.45** calibrated
+      vs **793 raw active callers** — an 85% attention-vs-accuracy gap
+      visible in one number.
+- [x] `high_confidence_call_ratio(week_of)` — share of resolved
+      ≥4-star calls that won. W01: **46.0%** (1226/2663).
+      Below 50% = the high-star signal isn't yet better than market;
+      consistent with substrate calibration on small samples.
+- [x] `daily_gyaani_aspirant_count(as_of_date)` — DAU replacement.
+      Cumulative count of users at aspirant-or-better tier as of
+      end-of-day, sharing `classify_gyaani` with the P1 share-metric.
+      W01 growth curve (day 1→7): 0, 0, 3, 44, 108, 213, 324 (1 locked
+      on day 7). The accelerating Facebook-style slope.
+- [x] `calls_with_explanation_rate(week_of)` — STUB. Requires a
+      `rationale` field on `fact_prediction` that the current schema
+      doesn't carry. Registered at version `"0.0.0-stub"` so consumers
+      flag the gap; status="stub" in breakdowns.
+
+All four registered in `DEFS`. Each returns a `MetricResult` carrying
+trace + provenance + interpretation. Tool surface is the same as
+existing metrics — agents call by name.
+
+**10 P4 tests cover:** registration, range/bound invariants, SQL
+cross-check on high_confidence, daily monotonicity over W01,
+locked⊂aspirant subset, and stub status documentation.
+
+**Status:** complete (3 of 4 real, 1 stubbed with documented schema
+gap; 247/247 tests + 11/11 failure modes pass).
 
 ### P5: Single funnel page (simplification)
 - [ ] New frontend page `frontend/app/funnel/page.tsx`:

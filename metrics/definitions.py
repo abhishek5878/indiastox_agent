@@ -52,6 +52,11 @@ DEFS = {
     "proposal_lift_calibration_index": "1.0.0",
     "gyaani_aspirant_share": "1.0.0",
     "gyaani_locked_share": "1.0.0",
+    # P4 attention -> accuracy headline metrics.
+    "weekly_active_callers_calibrated": "1.0.0",
+    "high_confidence_call_ratio": "1.0.0",
+    "daily_gyaani_aspirant_count": "1.0.0",
+    "calls_with_explanation_rate": "0.0.0-stub",
 }
 
 # Gyaani definition (P1). Two-tier: aspirant is the growth slope (broad,
@@ -2207,4 +2212,281 @@ def gyaani_status(user_id: str, week_of: str = "2024-W01") -> dict:
             calls_short_by=max(0, t["n_resolved_min"] - n_resolved),
         ),
         rule_version=GYAANI_RULE_VERSION,
+    )
+
+
+# ---------------------------------------------------------------------------
+# P4 — Attention -> Accuracy headline metrics
+#
+# The strategy meeting framed this as the PMF derisking move: replace
+# vanity attention metrics (MAU, session length, calls made, DAU) with
+# skill-weighted equivalents. Three of the four ship here; the fourth
+# (calls_with_explanation_rate) needs a `rationale` field on
+# fact_prediction that the schema doesn't carry yet — stubbed honestly.
+# ---------------------------------------------------------------------------
+
+
+def weekly_active_callers_calibrated(week_of: str = "2024-W01") -> MetricResult:
+    """WAU replacement — count of weekly active callers weighted by
+    each caller's mean calibration (Brier-derived) over their resolved
+    calls in the week.
+
+    Interpretation: an active week is one where 1,000 well-calibrated
+    callers contributes more than 1,000 random clickers. The weight is
+    in [0, 1] per user; the headline is the *sum of weights* (a count
+    in "calibrated-caller-equivalents"). For a population uniformly
+    well-calibrated, this approaches WAU; for the legacy unweighted
+    MAU it's strictly lower.
+    """
+    start, end = _week_bounds(week_of)
+    sql = """
+        WITH per_caller_calibration AS (
+          SELECT user_id,
+                 COUNT(*) AS n_resolved,
+                 AVG(POWER(((CAST(confidence_stars AS DOUBLE) - 1.0) / 4.0)
+                         - CASE outcome
+                             WHEN 'WIN' THEN 1.0
+                             WHEN 'DRAW' THEN 0.5
+                             ELSE 0.0
+                           END, 2)) AS brier
+          FROM fact_prediction
+          WHERE made_at >= ? AND made_at < ? AND is_outcome_resolved
+          GROUP BY user_id
+        ),
+        weighted AS (
+          SELECT user_id,
+                 n_resolved,
+                 GREATEST(0.0, 1.0 - brier * 4.0) AS calibration_weight
+          FROM per_caller_calibration
+          WHERE n_resolved >= 3
+        )
+        SELECT COALESCE(SUM(calibration_weight), 0.0) AS calibrated_callers,
+               COUNT(*) AS raw_active_callers
+        FROM weighted
+    """
+    con = _connect()
+    try:
+        cal, raw = con.execute(sql, [start, end]).fetchone()
+    finally:
+        con.close()
+    cal = float(cal or 0.0)
+    raw = int(raw or 0)
+    interp = (
+        f"Calibrated WAU = {cal:.1f} (sum of per-caller calibration weights; "
+        f"{raw} raw active callers in W01 with >=3 resolved calls). "
+        f"Replaces vanity MAU — a population at perfect calibration would "
+        f"score {raw}.0; the gap measures how much of 'active' is signal vs noise."
+    )
+    trace = [
+        f"weekly_active_callers_calibrated = {cal:.4f}",
+        "definition: sum_u max(0, 1 - brier_u * 4) over users with n_resolved >= 3",
+        f"raw active callers (gate met): {raw}",
+        "calibration_weight per user is in [0, 1]; sum is the headline.",
+    ]
+    return MetricResult(
+        trace=trace,
+        metric_name="weekly_active_callers_calibrated",
+        value=cal,
+        confidence=0.9,
+        sample_n=raw,
+        provenance=[
+            f"raw_active_callers:{raw}",
+            f"calibrated_callers:{cal:.4f}",
+            "replaces:WAU/MAU",
+        ],
+        window_open=False,
+        interpretation=interp,
+        definition_version=DEFS["weekly_active_callers_calibrated"],
+        computation_sql=sql.strip(),
+        as_of=_now(),
+        breakdowns=dict(raw_active_callers=raw, calibrated_callers=cal),
+    )
+
+
+def high_confidence_call_ratio(week_of: str = "2024-W01") -> MetricResult:
+    """Session-length replacement — share of resolved 4-star-or-5-star
+    calls in the week that actually WON.
+
+    Interpretation: do users put their thumbs on the right calls? A
+    population that high-stars only when right scores near 1.0; a
+    population that high-stars indiscriminately scores near the
+    population base rate. Replaces "average session length" which
+    measured attention not accuracy.
+    """
+    start, end = _week_bounds(week_of)
+    sql = """
+        WITH high_conf AS (
+          SELECT outcome
+          FROM fact_prediction
+          WHERE made_at >= ? AND made_at < ?
+            AND is_outcome_resolved
+            AND confidence_stars >= 4
+        )
+        SELECT SUM(CASE WHEN outcome = 'WIN' THEN 1 ELSE 0 END) AS wins,
+               COUNT(*) AS n
+        FROM high_conf
+    """
+    con = _connect()
+    try:
+        wins, n = con.execute(sql, [start, end]).fetchone()
+    finally:
+        con.close()
+    wins = int(wins or 0)
+    n = int(n or 0)
+    ratio = float(wins / n) if n else 0.0
+    interp = (
+        f"High-confidence call ratio = {ratio:.1%} "
+        f"({wins}/{n} resolved >=4-star calls in W01 won). "
+        f"Replaces session-length — measures whether high-confidence "
+        f"calls are actually signal."
+    )
+    trace = [
+        f"high_confidence_call_ratio = {ratio:.4f} = {wins}/{n}",
+        "definition: WIN-rate restricted to resolved calls with confidence_stars >= 4",
+        "interpretation: do users high-star the right calls?",
+    ]
+    return MetricResult(
+        trace=trace,
+        metric_name="high_confidence_call_ratio",
+        value=ratio,
+        confidence=0.9,
+        sample_n=n,
+        provenance=[
+            f"high_conf_resolved:{n}",
+            f"high_conf_wins:{wins}",
+            "replaces:session_length",
+        ],
+        window_open=False,
+        interpretation=interp,
+        definition_version=DEFS["high_confidence_call_ratio"],
+        computation_sql=sql.strip(),
+        as_of=_now(),
+        breakdowns=dict(high_conf_wins=wins, high_conf_resolved=n),
+    )
+
+
+def daily_gyaani_aspirant_count(as_of_date: str = "2024-01-07") -> MetricResult:
+    """DAU replacement — cumulative count of users who hold
+    Gyaani-aspirant tier (or better) as of end-of-day `as_of_date`.
+
+    The headline metric the meeting called out: "DAU replaced by daily
+    Gyaani-graduated user count." Daily graduations = day-N count minus
+    day-(N-1) count; the metric itself returns the cumulative count so
+    consumers can take diffs day-by-day.
+
+    Active set = users with at least 1 prediction made in the
+    sliding-week window ending `as_of_date`. Skill ratings are read
+    from the parquet materialization (which is computed once per
+    `make skill` run); as a consequence this metric is W01-stable
+    by construction and will become per-day-meaningful once P0.5b
+    snapshots skill ratings daily.
+    """
+    as_of = datetime.strptime(as_of_date, "%Y-%m-%d")
+    window_start = as_of - timedelta(days=7)
+    if not SKILL_PARQUET.exists():
+        raise FileNotFoundError(
+            f"skill ratings missing: {SKILL_PARQUET}. Run `make skill` first."
+        )
+    sql = """
+        WITH active AS (
+          SELECT user_id,
+                 SUM(CASE WHEN is_outcome_resolved THEN 1 ELSE 0 END) AS n_resolved
+          FROM fact_prediction
+          WHERE made_at >= ? AND made_at < ?
+          GROUP BY user_id
+        )
+        SELECT a.user_id, s.mu, s.phi, a.n_resolved
+        FROM active a
+        JOIN read_parquet(?) s ON s.user_id = a.user_id
+    """
+    con = _connect()
+    try:
+        rows = con.execute(sql, [window_start, as_of, str(SKILL_PARQUET)]).fetchall()
+    finally:
+        con.close()
+    aspirant_or_better = sum(
+        1 for _uid, mu, phi, n in rows
+        if classify_gyaani(float(mu), float(phi), int(n)) in ("aspirant", "locked")
+    )
+    locked = sum(
+        1 for _uid, mu, phi, n in rows
+        if classify_gyaani(float(mu), float(phi), int(n)) == "locked"
+    )
+    interp = (
+        f"Gyaani-aspirant-or-better count as of {as_of_date} = "
+        f"{aspirant_or_better} users ({locked} of them at locked tier). "
+        f"Replaces DAU — the headline number that's expected to go "
+        f"up-and-to-the-right as the population graduates."
+    )
+    trace = [
+        f"daily_gyaani_aspirant_count = {aspirant_or_better} as of {as_of_date}",
+        f"locked_subset = {locked}",
+        f"active_set = users with >= 1 call in 7-day window ending {as_of_date}",
+        f"rule_version = {GYAANI_RULE_VERSION}; classify_gyaani shared with gyaani_aspirant_share",
+    ]
+    return MetricResult(
+        trace=trace,
+        metric_name="daily_gyaani_aspirant_count",
+        value=float(aspirant_or_better),
+        confidence=0.85,
+        sample_n=len(rows),
+        provenance=[
+            f"as_of:{as_of_date}",
+            f"active_set:{len(rows)}",
+            f"aspirant_or_better:{aspirant_or_better}",
+            f"locked:{locked}",
+            "replaces:DAU",
+        ],
+        window_open=False,
+        interpretation=interp,
+        definition_version=DEFS["daily_gyaani_aspirant_count"],
+        computation_sql=sql.strip(),
+        as_of=_now(),
+        breakdowns=dict(
+            aspirant_or_better=aspirant_or_better,
+            locked=locked,
+            active_set=len(rows),
+        ),
+    )
+
+
+def calls_with_explanation_rate(week_of: str = "2024-W01") -> MetricResult:
+    """STUB — replaces "calls made" with "calls accompanied by rationale
+    text." Requires a `rationale` field on `fact_prediction` that the
+    current schema doesn't carry. Surfaces honestly with value=0.0 and
+    a status note so dashboards and agents can flag the gap.
+
+    When the product surface adds the rationale field, this becomes:
+      SELECT SUM(CASE WHEN rationale IS NOT NULL AND length(rationale) > 0
+                      THEN 1 ELSE 0 END) * 1.0 / COUNT(*)
+      FROM fact_prediction WHERE ...
+    """
+    interp = (
+        "STUB: calls_with_explanation_rate requires a `rationale` field on "
+        "fact_prediction that does not exist in the current schema. The "
+        "metric is registered so downstream agents can flag the gap; "
+        "value=0.0 until the rationale field is added in a future "
+        "product-surface phase."
+    )
+    return MetricResult(
+        trace=[
+            "calls_with_explanation_rate is stubbed pending schema extension.",
+            "Plan: add `rationale` TEXT field to fact_prediction; this metric "
+            "becomes SUM(rationale IS NOT NULL) / COUNT(*).",
+        ],
+        metric_name="calls_with_explanation_rate",
+        value=0.0,
+        confidence=0.0,
+        sample_n=0,
+        provenance=[
+            "status:stub_pending_schema_extension",
+            "schema_gap:fact_prediction.rationale",
+            "replaces:calls_made_vanity_metric",
+        ],
+        window_open=False,
+        interpretation=interp,
+        definition_version=DEFS["calls_with_explanation_rate"],
+        computation_sql="-- stubbed: requires fact_prediction.rationale field --",
+        as_of=_now(),
+        breakdowns=dict(status="stub"),
     )
