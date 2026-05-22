@@ -50,7 +50,55 @@ DEFS = {
     "user_disengagement_rate": "1.0.0",
     "ghost_recovery_rate": "1.0.0",
     "proposal_lift_calibration_index": "1.0.0",
+    "gyaani_aspirant_share": "1.0.0",
+    "gyaani_locked_share": "1.0.0",
 }
+
+# Gyaani definition (P1). Two-tier: aspirant is the growth slope (broad,
+# achievable on W01); locked is the trophy (top decile of skill + low
+# uncertainty + meaningful sample size). Thresholds were chosen after
+# observing the meta-pattern on the W01 substrate:
+#   - phi-only (no mu gate) picks volume not skill — 100% of day_traders
+#     graduate but their mean win-rate is 0.406 (below population 0.430).
+#   - strict (mu>=p90 AND phi<150 AND n>=10) finds 1 graduate on W01
+#     because n_resolved is capped at 11 (median 3). Becomes meaningful
+#     once P0.5b multi-week ships.
+#   - medium (mu>=p90 AND phi<170 AND n>=5) finds 4.2% on W01 with
+#     mean win-rate 0.825 — real skill signal but contaminated by lucky
+#     FOMO cascaders at low sample sizes.
+# Two-tier resolves this: aspirant is honest on W01; locked is the
+# multi-week target the badge sits behind.
+GYAANI_RULE_VERSION = "1.0.0"
+GYAANI_THRESHOLDS = {
+    "aspirant": {"mu_min": 1500.0, "phi_max": 200.0, "n_resolved_min": 3},
+    "locked":   {"mu_min": 1686.0, "phi_max": 150.0, "n_resolved_min": 10},
+}
+
+SKILL_PARQUET = REPO / "data" / "skill_ratings.parquet"
+
+
+def classify_gyaani(mu: float, phi: float, n_resolved: int) -> str:
+    """Pure function — the single source of truth for the Gyaani rule.
+
+    Returns "locked" | "aspirant" | "none". Both `gyaani_aspirant_share` and
+    `gyaani_locked_share` call this so the threshold logic lives exactly
+    once (per the substrate's defined-once invariant). The per-user
+    `gyaani_status` tool also calls this.
+
+    Locked is a strict superset of aspirant: a locked user is also an
+    aspirant by construction. The aspirant-tier metric counts users who
+    are aspirant-or-locked; the locked-tier metric counts only locked.
+    """
+    t = GYAANI_THRESHOLDS
+    if (mu >= t["locked"]["mu_min"]
+            and phi < t["locked"]["phi_max"]
+            and n_resolved >= t["locked"]["n_resolved_min"]):
+        return "locked"
+    if (mu >= t["aspirant"]["mu_min"]
+            and phi < t["aspirant"]["phi_max"]
+            and n_resolved >= t["aspirant"]["n_resolved_min"]):
+        return "aspirant"
+    return "none"
 
 # Product surface markers. The Pre-IPO ticker tray is a feature on the
 # IndiaStox product; in the warehouse we flag a subset of synthetic
@@ -1950,4 +1998,213 @@ def proposal_lift_calibration_index() -> MetricResult:
                 for r in rows[:5]
             ],
         ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Gyaani — two-tier definition (P1). See classify_gyaani above for the rule.
+# ---------------------------------------------------------------------------
+
+
+def _gyaani_population(week_of: str) -> list[tuple]:
+    """Pull (user_id, mu, phi, n_resolved, archetype_slug) for users active
+    in the week. Active = at least one prediction (resolved or not) made
+    during the window. Skill ratings are read from the parquet
+    materialization that `make skill` produces.
+
+    Returned as raw tuples so the two share metrics can each classify
+    once via classify_gyaani without re-running the SQL.
+    """
+    start, end = _week_bounds(week_of)
+    if not SKILL_PARQUET.exists():
+        raise FileNotFoundError(
+            f"skill ratings missing: {SKILL_PARQUET}. Run `make skill` first."
+        )
+    sql = """
+        WITH active AS (
+          SELECT user_id, COUNT(*) AS n_made,
+                 SUM(CASE WHEN is_outcome_resolved THEN 1 ELSE 0 END) AS n_resolved
+          FROM fact_prediction
+          WHERE made_at >= ? AND made_at < ?
+          GROUP BY user_id
+        )
+        SELECT a.user_id, s.mu, s.phi, a.n_resolved, du.archetype_slug
+        FROM active a
+        JOIN read_parquet(?) s ON s.user_id = a.user_id
+        LEFT JOIN dim_user du ON du.user_id = a.user_id
+    """
+    con = _connect()
+    try:
+        rows = con.execute(sql, [start, end, str(SKILL_PARQUET)]).fetchall()
+    finally:
+        con.close()
+    return rows
+
+
+def gyaani_aspirant_share(week_of: str = "2024-W01") -> MetricResult:
+    """Share of active users in the Gyaani-aspirant tier.
+
+    Aspirant = mu >= 1500 (beating market) AND phi < 200 AND
+    n_resolved >= 3. This is the growth-slope tier — broad early signal
+    that a user is on the Gyaani path. By design, locked users are also
+    aspirant (locked is a strict subset), so this metric counts both.
+    """
+    rows = _gyaani_population(week_of)
+    total = len(rows)
+    aspirant_or_better = sum(
+        1 for _uid, mu, phi, n, _arch in rows
+        if classify_gyaani(float(mu), float(phi), int(n)) in ("aspirant", "locked")
+    )
+    rate = float(aspirant_or_better / total) if total else 0.0
+    t = GYAANI_THRESHOLDS["aspirant"]
+    interp = (
+        f"Gyaani-aspirant share = {rate:.1%} "
+        f"({aspirant_or_better}/{total} active users in W01 meet "
+        f"mu>={t['mu_min']:.0f} AND phi<{t['phi_max']:.0f} AND "
+        f"n_resolved>={t['n_resolved_min']})."
+    )
+    trace = [
+        f"gyaani_aspirant_share = {rate:.4f} = {aspirant_or_better}/{total} of active users.",
+        "definition: AND of three thresholds; mu vs. market opponent (1500), "
+        "phi as Glicko-2 uncertainty, n_resolved for sample-size gate.",
+        f"rule lives in classify_gyaani(); thresholds in GYAANI_THRESHOLDS['aspirant'] (rule v{GYAANI_RULE_VERSION}).",
+    ]
+    return MetricResult(
+        trace=trace,
+        metric_name="gyaani_aspirant_share",
+        value=rate,
+        confidence=0.85,
+        sample_n=total,
+        provenance=[
+            f"cohort_size:{total}",
+            f"aspirant_or_locked:{aspirant_or_better}",
+            f"rule_version:{GYAANI_RULE_VERSION}",
+            f"thresholds:mu>={t['mu_min']:.0f}_phi<{t['phi_max']:.0f}_n>={t['n_resolved_min']}",
+        ],
+        window_open=False,
+        interpretation=interp,
+        definition_version=DEFS["gyaani_aspirant_share"],
+        computation_sql="(see _gyaani_population) + classify_gyaani per-user",
+        as_of=_now(),
+        breakdowns=dict(aspirant_or_locked=aspirant_or_better, cohort_size=total),
+    )
+
+
+def gyaani_locked_share(week_of: str = "2024-W01") -> MetricResult:
+    """Share of active users in the Gyaani-locked tier (the badge).
+
+    Locked = mu >= 1686 AND phi < 150 AND n_resolved >= 10. Tight by
+    design: on W01 substrate this is expected to be <1% because
+    n_resolved >= 10 is unreachable for nearly all users on a single
+    week. Becomes meaningful once P0.5b ships multi-week data; the rule
+    itself doesn't need to change — the data accumulates against it.
+    """
+    rows = _gyaani_population(week_of)
+    total = len(rows)
+    locked = sum(
+        1 for _uid, mu, phi, n, _arch in rows
+        if classify_gyaani(float(mu), float(phi), int(n)) == "locked"
+    )
+    rate = float(locked / total) if total else 0.0
+    t = GYAANI_THRESHOLDS["locked"]
+    interp = (
+        f"Gyaani-locked share = {rate:.2%} "
+        f"({locked}/{total} active users in W01 meet "
+        f"mu>={t['mu_min']:.0f} AND phi<{t['phi_max']:.0f} AND "
+        f"n_resolved>={t['n_resolved_min']}). "
+        f"Multi-week data (P0.5b) is required for this tier to populate "
+        f"meaningfully — W01 caps n_resolved at ~11."
+    )
+    trace = [
+        f"gyaani_locked_share = {rate:.4f} = {locked}/{total} of active users.",
+        f"definition: strict AND of mu>=p90-equivalent ({t['mu_min']:.0f}), "
+        f"phi<{t['phi_max']:.0f}, n_resolved>={t['n_resolved_min']}.",
+        f"rule lives in classify_gyaani(); thresholds in GYAANI_THRESHOLDS['locked'] (rule v{GYAANI_RULE_VERSION}).",
+        f"W01 caveat: n_resolved>=10 limits this tier on single-week data; "
+        f"the rule is invariant to weeks but the data must accumulate.",
+    ]
+    return MetricResult(
+        trace=trace,
+        metric_name="gyaani_locked_share",
+        value=rate,
+        confidence=0.90,
+        sample_n=total,
+        provenance=[
+            f"cohort_size:{total}",
+            f"locked:{locked}",
+            f"rule_version:{GYAANI_RULE_VERSION}",
+            f"thresholds:mu>={t['mu_min']:.0f}_phi<{t['phi_max']:.0f}_n>={t['n_resolved_min']}",
+        ],
+        window_open=False,
+        interpretation=interp,
+        definition_version=DEFS["gyaani_locked_share"],
+        computation_sql="(see _gyaani_population) + classify_gyaani per-user",
+        as_of=_now(),
+        breakdowns=dict(locked=locked, cohort_size=total),
+    )
+
+
+def gyaani_status(user_id: str, week_of: str = "2024-W01") -> dict:
+    """Per-user Gyaani classification + gap analysis (tool surface).
+
+    Returns:
+      {
+        "tier": "locked" | "aspirant" | "none",
+        "mu": float | None,
+        "phi": float | None,
+        "n_resolved": int,
+        "gaps_to_locked": {
+            "mu_short_by": float,         # 0 if already past
+            "phi_excess": float,          # 0 if already past
+            "calls_short_by": int,        # 0 if already past
+        },
+        "rule_version": str,
+      }
+
+    Agents use this when answering "is X a Gyaani?" or "how close is X
+    to Gyaani?" Returns tier="none" + None mu/phi when the user has no
+    resolved predictions yet.
+    """
+    start, end = _week_bounds(week_of)
+    sql = """
+        WITH active AS (
+          SELECT COUNT(*) AS n_made,
+                 SUM(CASE WHEN is_outcome_resolved THEN 1 ELSE 0 END) AS n_resolved
+          FROM fact_prediction
+          WHERE user_id = ? AND made_at >= ? AND made_at < ?
+        )
+        SELECT s.mu, s.phi, COALESCE(a.n_resolved, 0)
+        FROM active a
+        LEFT JOIN read_parquet(?) s ON s.user_id = ?
+    """
+    con = _connect()
+    try:
+        row = con.execute(sql, [user_id, start, end, str(SKILL_PARQUET), user_id]).fetchone()
+    finally:
+        con.close()
+    mu, phi, n_resolved = row if row else (None, None, 0)
+    n_resolved = int(n_resolved or 0)
+    if mu is None or phi is None:
+        return dict(
+            tier="none",
+            mu=None,
+            phi=None,
+            n_resolved=n_resolved,
+            gaps_to_locked=dict(mu_short_by=None, phi_excess=None, calls_short_by=None),
+            rule_version=GYAANI_RULE_VERSION,
+        )
+    mu = float(mu)
+    phi = float(phi)
+    t = GYAANI_THRESHOLDS["locked"]
+    return dict(
+        tier=classify_gyaani(mu, phi, n_resolved),
+        mu=mu,
+        phi=phi,
+        n_resolved=n_resolved,
+        gaps_to_locked=dict(
+            mu_short_by=max(0.0, t["mu_min"] - mu),
+            phi_excess=max(0.0, phi - t["phi_max"]),
+            calls_short_by=max(0, t["n_resolved_min"] - n_resolved),
+        ),
+        rule_version=GYAANI_RULE_VERSION,
     )
