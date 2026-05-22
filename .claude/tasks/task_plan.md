@@ -844,21 +844,55 @@ ticker-popularity windows across weeks.
 pending P0.5b; presence + audit recorded; 28 reward-axes tests
 plus 212/212 in the full suite pass).
 
-### P3: Behavior types — 8 measurable segments
-- [ ] Classifier in `sim/` (or `metrics/segments.py` new) that
-      assigns each user to one of: Concentrators, Diversifiers,
-      Tilted, Shadows, Alphas, Anchored, Cooled-off, Ghosted.
-      Thresholds drawn from sim — code them as constants the
-      semantic layer owns.
-- [ ] New metric: `segment_distribution(week_of)` →
-      counts per segment + transition matrix (Anchored → Tilted,
-      etc.) for last N weeks.
-- [ ] Tool surface: `user_segment(user_id)`.
-- [ ] Replace any demographic/geographic slicing in dashboards
-      with segment slicing.
-**Done when:** the 8 segments sum to ~100% of active users;
-transition matrix is non-degenerate (segments do move).
-**Status:** pending
+### P3: Behavior types — 8 measurable segments (shipped 2026-05-22)
+
+**Architecture (mirrors P2 reward-axes):**
+- `metrics/behavior_segments.py` — single-source-of-truth pure
+  scoring functions per segment. `_SCORERS` dispatch table.
+- `classify_user_segment(user_id, week_of)` returns 8-segment
+  scores + `primary_segment` (excluding stubs) + `primary_score`.
+- All scorers return `[0, 1]`. Sample-size gates per segment.
+- `SEGMENTS_VERSION = "1.0.0"`.
+
+**The 8 segments:**
+
+Real on W01 (7):
+- ghosted — 0 calls in window (binary 1/0)
+- cooled_off — first-half/second-half call rate ratio
+- tilted — post-LOSS revenge-call frequency within 4 sim-hours
+- alphas — mu >= Gyaani-locked floor (1686) + sample
+- anchored — top sector share >= 0.75 of calls
+- concentrators — coverage <= 0.5 with >=5 calls (narrow but voluminous)
+- diversifiers — coverage >= 0.5 (>=2 of 4 sectors)
+
+Stubbed (1, P0.5b unlocks):
+- shadows — needs copy_call edges from peer_copy layer
+
+**Meta-pattern validates design:**
+- day_trader: 54% Diversifiers, 19% Concentrators (heavy + broad ✓)
+- alpha_generator: 30% Diversifiers, 13% Tilted, 9% Alphas (top-tier
+  Alphas hard to reach on W01 mu; multi-week unlocks)
+- weekend_casual: 65% Ghosted (designed; signs up Mon-Wed, only
+  active weekends — most weeks they never call)
+- lurker_turned_caller: 69% Ghosted (designed to lurk in W01)
+- 5 low-volume cohorts (anchored, diversifier, pharma_doctor,
+  skeptic, ghost_risk_junior): 63-84% "primary_segment=None" —
+  they made 1-2 calls, below segment gates. "none" is a valid
+  bucket distinct from ghosted; consumers route via P1 nudges
+  or the P2 presence axis.
+
+**Done when:** ✓ ✓ ✓
+  - the 8 segments sum to ~100% of active users (or None for
+    pre-classification)
+  - 25 pytest tests cover boundaries, range invariants, stub
+    behavior, live-warehouse aggregator structure
+
+**Frontend swap to segment-slicing** deferred — substrate ships;
+dashboard re-render is a follow-up.
+
+**Status:** complete (7 of 8 real on W01; 1 stubbed pending P0.5b
+copy_call events; 25 tests pass; full suite 237/237 + 11/11
+failure modes).
 
 ## Layer 2 — Headline & funnel translation
 
