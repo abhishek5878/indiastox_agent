@@ -59,6 +59,8 @@ DEFS = {
     "calls_with_explanation_rate": "0.0.0-stub",
     # P5 funnel view (one metric serves the whole funnel page).
     "funnel_stages": "1.0.0",
+    # P7 insights extractor (ranked surprise observations).
+    "insights_generate": "1.0.0",
 }
 
 # Gyaani definition (P1). Two-tier: aspirant is the growth slope (broad,
@@ -2662,5 +2664,72 @@ def funnel_stages(week_of: str = "2024-W01", acquisition_source: str = "unstop")
             drop_off=drop_off,
             acquisition_source=acquisition_source,
             week_of=week_of,
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Insights extractor (P7). Wraps agent.insights.generate_insights() in a
+# MetricResult envelope so it joins the tool surface and can be called
+# from agents, dashboards, and tests via the same interface as every
+# other metric.
+#
+# value = top insight's surprise_score (the headline "how surprised
+# should we be?"). breakdowns carry the full ranked list.
+# ---------------------------------------------------------------------------
+
+
+def insights_generate(week_of: str = "2024-W01", top_n: int = 10) -> MetricResult:
+    """Run every registered insight scanner and return the ranked list.
+
+    Calls into `agent.insights.generate_insights()` so the scanner
+    logic lives in one place (agent/insights.py). This wrapper only
+    handles the MetricResult envelope: a `value` summary, a
+    breakdowns table the frontend can render, and the audit
+    contract every metric satisfies.
+    """
+    from agent.insights import INSIGHTS_VERSION, generate_insights
+
+    insights = generate_insights(week_of)
+    insights = insights[:top_n]
+    top_score = insights[0].surprise_score if insights else 0.0
+    by_kind: dict[str, int] = {}
+    for ins in insights:
+        by_kind[ins.kind] = by_kind.get(ins.kind, 0) + 1
+
+    if insights:
+        interp = (
+            f"insights_generate returned {len(insights)} ranked observations "
+            f"(top surprise={top_score:.2f}). Top finding: "
+            f"{insights[0].summary}"
+        )
+    else:
+        interp = "insights_generate returned no observations above scanner floors."
+
+    trace = [
+        f"insights_generate top_score = {top_score:.4f}.",
+        f"scanners fired: {sorted(by_kind)}.",
+        f"insights_version={INSIGHTS_VERSION}; scanner logic lives in agent/insights.py.",
+    ]
+    return MetricResult(
+        trace=trace,
+        metric_name="insights_generate",
+        value=float(top_score),
+        confidence=0.75,  # heuristic scanners; surprise_score is a ranking, not a probability
+        sample_n=len(insights),
+        provenance=[
+            f"insights_version:{INSIGHTS_VERSION}",
+            f"scanners:{','.join(sorted(by_kind))}",
+            f"top_kind:{insights[0].kind if insights else 'none'}",
+        ],
+        window_open=False,
+        interpretation=interp,
+        definition_version=DEFS["insights_generate"],
+        computation_sql="-- multi-scanner; see agent/insights.py for SQL --",
+        as_of=_now(),
+        breakdowns=dict(
+            insights=[i.to_dict() for i in insights],
+            by_kind=by_kind,
+            insights_version=INSIGHTS_VERSION,
         ),
     )

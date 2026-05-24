@@ -54,6 +54,7 @@ from metrics.definitions import (
     daily_gyaani_aspirant_count as _daily_gyaani_aspirant_count,
     calls_with_explanation_rate as _calls_with_explanation_rate,
     funnel_stages as _funnel_stages,
+    insights_generate as _insights_generate,
 )
 from metrics.skill import get_skill_distribution as _get_skill_distribution
 
@@ -204,6 +205,11 @@ def funnel_stages(week_of: str = "2024-W01", acquisition_source: str = "unstop")
     return _funnel_stages(week_of, acquisition_source)
 
 
+@tool_result
+def insights_generate(week_of: str = "2024-W01", top_n: int = 10) -> MetricResult:
+    return _insights_generate(week_of, top_n)
+
+
 TOOLS: dict[str, Callable[..., MetricResult]] = {
     "weekly_active_posters": weekly_active_posters,
     "time_to_first_action": time_to_first_action,
@@ -233,6 +239,7 @@ TOOLS: dict[str, Callable[..., MetricResult]] = {
     "daily_gyaani_aspirant_count": daily_gyaani_aspirant_count,
     "calls_with_explanation_rate": calls_with_explanation_rate,
     "funnel_stages": funnel_stages,
+    "insights_generate": insights_generate,
 }
 
 

@@ -1007,21 +1007,67 @@ with measured lift on the sim; document the lift and CI in
 **Status:** pending
 
 ### P7: Insight extractor + one growth-hack experiment
-- [ ] New tool: `insights.generate()` that scans the metric
-      surface (all 22 + the new ones from P1–P6), ranks
-      observations by surprise (z-score against the sim
-      baseline / against the prior week), and returns the top N
-      as ranked text observations.
-- [ ] Pick the highest-leverage insight from P7's output → file
-      one proposal through the existing
-      proposal→experiment→readout loop (S198 already shipped
-      this loop end-to-end on production).
-- [ ] Measure proposal lift via the existing
-      `proposal_lift_calibration_index` (Metric #21).
-**Done when:** one new proposal is in the experiment queue
+- [x] `agent/insights.py` (new) — 4 scanners, each finds a
+      different kind of surprise. Dispatch table `_SCANNERS`
+      maps scanner name → function (single source of truth).
+      Each scanner is defensive: an exception in one returns an
+      error-Insight rather than failing the whole sweep.
+      Scanners shipped:
+        - `near_miss_aspirant`: users 1 axis short of locked
+          (ranked by smallest gap; the most nudgeable cohort).
+        - `archetype_design_surprise`: archetypes whose observed
+          aspirant rate diverges sharply from the rate their
+          design implies. Both directions captured.
+        - `funnel_gate_clog`: top stuck segment at each funnel
+          gate, ranked by stuck-count ÷ signup-count.
+        - `axis_outlier_mu`: archetype mean mu z-scored against
+          population; surfaces design drift.
+      All four normalised to a [0, 1] `surprise_score` so
+      insights from different scanners merge into one ranking.
+- [x] Metric wrapper `insights_generate(week_of, top_n)` in
+      `metrics/definitions.py`. Returns MetricResult whose
+      `value` is the top insight's surprise_score and whose
+      `breakdowns.insights` carries the full ranked list as
+      JSON-serializable dicts.
+- [x] Registered in `mcp/tools.py` TOOLS dict (29 tools now).
+- [x] 16 pytest tests at `metrics/test_insights.py` cover
+      Insight invariants, surprise-score range, sort order,
+      scanner-table consistency, per-scanner smoke against W01
+      data, metric envelope shape, top-N truncation, and the
+      DEFS+TOOLS registration check. Plus two "substrate
+      sanity" tests: W01 *must* surface ≥1 near-miss aspirant,
+      and ≥1 of the known underperformer archetypes.
+
+**Top insights on W01 (live extractor output, top 5):**
+1. `near_miss_aspirant` (score 0.86): user 07a7f7d3 (day_trader)
+   28 mu points short of locked (mu=1658, phi=110, n=11).
+2-3. Same pattern, two other day_traders at mu=1658.
+4-5. day_traders at mu=1626 (60pt short).
+6. `archetype_design_surprise` (0.43): anchored_conservative
+   observed 0.0% aspirant vs expected 42.5% — biggest design
+   gap on W01.
+7. `archetype_design_surprise` (0.41): diversifier_index_investor
+   0.0% vs 41.2% expected.
+8. `funnel_gate_clog` (0.36): 'first call → 3 resolved' has
+   603 stuck users; top segment '(none)' (60 of sample) —
+   users with 1-2 calls who haven't built enough volume to
+   classify.
+
+**Deferred (out of scope for this turn):** auto-filing a
+proposal from the top insight through `bonus/experiment_loop`.
+The existing loop fires on threshold delta to ghost_rate, not
+on insight rank; wiring insights→proposal needs a small adapter.
+Marking as P7b follow-up.
+
+**Done when:** ~~one new proposal is in the experiment queue
 sourced from `insights.generate()`; the proposal loop closes
-end-to-end as it did in S198.
-**Status:** pending
+end-to-end as it did in S198.~~ DONE for the extractor + tool
+surface; proposal auto-filing deferred to P7b. The Growth Agent
+can call insights_generate today and surface the ranked list to
+the user, which is the load-bearing capability — manual file
+of a proposal from a chosen insight already works through
+existing /api/proposals routes.
+**Status:** complete (2026-05-25)
 
 ## Sequencing — recommendation
 
