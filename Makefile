@@ -42,6 +42,9 @@ verify:
 audit:
 	python3 -m agent.audit_summary $(ARGS)
 
+digest:
+	python3 -m agent.insights_digest $(ARGS)
+
 llm-demo:
 	python3 -m agent.llm_growth_agent $(ARGS)
 

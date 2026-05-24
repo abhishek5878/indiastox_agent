@@ -11,11 +11,13 @@ const NAV = [
   { href: "/overview",  label: "Overview",        group: "see" },
   { href: "/funnel",    label: "Growth funnel",   group: "see" },
   { href: "/metrics",   label: "Metrics",         group: "explore" },
+  { href: "/fingerprint", label: "User fingerprint", group: "explore" },
   { href: "/identity",  label: "Identity graph",  group: "explore" },
   { href: "/audit",     label: "Audit trail",     group: "explore" },
   { href: "/eval",      label: "Eval scorecard",  group: "evaluate" },
   { href: "/proposals", label: "Proposals",       group: "evaluate" },
   { href: "/cs",        label: "CS interventions", group: "act" },
+  { href: "/cs-nudges", label: "Nudge targets",   group: "act" },
   { href: "/chat",      label: "Ask the agent",   group: "act" },
 ];
 

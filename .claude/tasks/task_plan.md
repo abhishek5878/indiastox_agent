@@ -1069,6 +1069,115 @@ of a proposal from a chosen insight already works through
 existing /api/proposals routes.
 **Status:** complete (2026-05-25)
 
+## Layer C — Consumption discipline (shipped 2026-05-25)
+
+The 7-umbrella substrate phases (P0.5/P1/P2/P3/P4/P5/P7) built the
+data; this layer builds the consumer surfaces. The diagnosis after
+P7 was: "we have built almost all of what the meeting asked for, but
+we have not yet built any of the surfaces that would make the
+substrate matter to a non-engineer." The three pieces below close
+that gap. P0.5b (multi-week + cross-agent) remains the substrate
+investment that unlocks weekly trends + the 4 stubs.
+
+### C1: Daily insights digest
+- [x] `agent/insights_digest.py` (new) — renders `insights_generate`
+      output as text or markdown for daily cron / Slack / email.
+- [x] Makefile target `make digest ARGS="--top 5 --format markdown"`.
+- [x] 3 tests at `tests/test_insights_digest.py` cover both
+      formatters + top_n truncation.
+
+### C2: CS nudges page
+- [x] Backend metric `nudge_targets(week_of, top_n,
+      acquisition_source)` in `metrics/definitions.py`. Returns
+      ranked aspirant users by composite gap_score with the
+      specific axis they're shortest on + a one-line nudge_hook.
+- [x] Registered in `mcp/tools.py` TOOLS dict (now 30 metrics).
+- [x] Frontend page `frontend/app/cs-nudges/page.tsx` with
+      sortable table + axis-filter pills. Sidebar entry "Nudge
+      targets" under "Take action" group.
+- [x] 6 tests at `metrics/test_consumption_layer.py` cover
+      shape, sort-ascending invariant, aspirant-only filter,
+      valid axis enum, and registration.
+- [x] Verified end-to-end against dev server: /cs-nudges 200s,
+      backend nudge_targets returns 358 aspirants with day_trader
+      users at top (28pt mu-short → "build accuracy" hook).
+
+### C3: User badge widget
+- [x] Backend metric `user_fingerprint(user_id, week_of)` in
+      `metrics/definitions.py`. Composes gyaani_status (P1) +
+      user_reward_axes (P2) + classify_user_segment (P3) into a
+      single MetricResult. value=tier_rank (0/1/2); breakdowns
+      carry the full per-user fingerprint for one-fetch render.
+- [x] Registered in `mcp/tools.py` (now 31 metrics).
+- [x] Frontend page `frontend/app/fingerprint/page.tsx` with
+      user-id input, near-miss-sample buttons, tier badge,
+      gaps-to-locked CTA, 8-axis horizontal bars, segment label
+      + score table. Sidebar entry "User fingerprint" under
+      "Explore the substrate".
+- [x] 5 tests at `metrics/test_consumption_layer.py` cover
+      shape, value=tier_rank invariant, aspirant-must-have-gap
+      sanity, unknown-user fallback, and registration.
+- [x] Verified end-to-end: /fingerprint 200s in 161ms;
+      compose-of-three returns coherent state (one demo user is
+      "day_trader aspirant, top axis coverage, primary segment
+      diversifiers, 28 mu short of locked").
+
+**Numbers:** 287 tests pass (was 273; +14 new); 11/11 failure
+modes pass; TOOLS dict grew 28 → 31.
+
+## Deferred: P0.5b — multi-week + cross-agent (next session)
+
+The 7-umbrella execution + the consumption-discipline layer are now
+shipped on the W01 substrate. The remaining work all depends on
+P0.5b. Scope reminder so the next session can pick up cold:
+
+**What P0.5b adds:**
+1. Generate W02 + W03 + W04 with cross-week state continuity —
+   end-of-W01 UserState becomes start-of-W02 UserState; network
+   edges persist; beliefs accumulate.
+2. Tick-by-tick event-generation loop (vs. the per-persona single-
+   pass loop in P0.5). Required for cross-agent layers
+   (peer_copy, group_clustering, copy_trading) to fire.
+3. Population context per tick: `assign_groups`,
+   `compute_group_sentiments`, `build_cascade_graph`,
+   `collect_recent_calls_by_followed`. Feeds into
+   `compose_all_layers` so the 3 stubbed cross-agent layers
+   become real.
+
+**What P0.5b unlocks (deferred work that becomes feasible):**
+- P0.5b → influence + discovery reward axes (P2 stubs become real)
+- P0.5b → shadows behavior segment (P3 stub becomes real)
+- P0.5b → calls_with_explanation_rate measured (P4 stub) — needs
+  a schema extension for fact_prediction.rationale, separate from
+  the multi-week work but cleanest to land together
+- P0.5b → per-sector Gyaani (P1b) — needs (user, sector) Glicko-2
+  ratings + multi-week phi convergence per sector cell
+- P0.5b → recovery-arc case (0/4 then 4/4 → Gyaani) — needs W1+W2
+- P0.5b → P6 good-day activation analysis (W1 features → W2 retention)
+- P0.5b → weekly trend lines on Funnel + Overview (week-over-week
+  delta is where the most actionable signal lives)
+- P0.5b → archetype_cohort_drift metric (whether interventions worked)
+
+**Implementation sketch** (carries the user's "ship full wiring or none"
+correction from P0.5a rollback):
+- `generate.py`: rewrite the per-persona loop into per-tick. Per
+  persona, advance UserState event-by-event. Cross-week: persist
+  UserState snapshots between weeks (parquet by week).
+- `sim/world.py` already supports multi-week semantics for the
+  live-sim path; align the static-week generator with that pattern.
+- New table `user_state_snapshot(user_id, week_of, state_json)`
+  with the 8 state vectors at end of each week.
+- All cross-agent layers' `population_context` argument gets fed
+  for the first time. Verify layer firing via the lift on
+  cascade_followon_lift (current 1.0x → expected >1.5x).
+- Deferred-join window: W02 outcomes resolve in W03, etc.
+
+**Likely scope:** 1-2 sessions of focused work; touches generate.py
+deeply but should not require schema changes beyond
+user_state_snapshot.
+
+**Status:** pending (next session)
+
 ## Sequencing — recommendation
 
 P1 → P2 → P3 in Layer 1 first (foundational; each builds on the

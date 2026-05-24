@@ -61,6 +61,10 @@ DEFS = {
     "funnel_stages": "1.0.0",
     # P7 insights extractor (ranked surprise observations).
     "insights_generate": "1.0.0",
+    # Consumption layer: CS nudge targets per user.
+    "nudge_targets": "1.0.0",
+    # Consumption layer: unified per-user fingerprint (the in-app badge).
+    "user_fingerprint": "1.0.0",
 }
 
 # Gyaani definition (P1). Two-tier: aspirant is the growth slope (broad,
@@ -2731,5 +2735,221 @@ def insights_generate(week_of: str = "2024-W01", top_n: int = 10) -> MetricResul
             insights=[i.to_dict() for i in insights],
             by_kind=by_kind,
             insights_version=INSIGHTS_VERSION,
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Consumption layer: CS nudge targets.
+#
+# Wraps `gyaani_status` over the cohort of users currently in the
+# aspirant tier, ranked by how nudgeable they are (smaller composite
+# gap to locked = higher leverage). Frontend /cs-nudges page renders
+# this directly; no client-side composition.
+# ---------------------------------------------------------------------------
+
+
+def nudge_targets(week_of: str = "2024-W01", top_n: int = 50,
+                  acquisition_source: str = "unstop") -> MetricResult:
+    """Top-N aspirant users sorted by smallest composite gap-to-locked.
+
+    Composite gap normalises each axis to its locked threshold range:
+      gap_score = (calls_short / 10) + (mu_short / 200) + (phi_excess / 50)
+    Lower = more nudgeable. Returns up to top_n users, each enriched
+    with archetype, current mu/phi/n_resolved, and the specific axis
+    they're shortest on (the message hook the CS team uses).
+    """
+    start, end = _week_bounds(week_of)
+    if not SKILL_PARQUET.exists():
+        raise FileNotFoundError(
+            f"skill ratings missing: {SKILL_PARQUET}. Run `make skill` first."
+        )
+    sql = """
+        WITH active AS (
+          SELECT user_id, SUM(CASE WHEN is_outcome_resolved THEN 1 ELSE 0 END) AS n_resolved
+          FROM fact_prediction
+          WHERE made_at >= ? AND made_at < ?
+          GROUP BY user_id
+        )
+        SELECT a.user_id, du.archetype_slug, du.full_name, du.acquisition_source,
+               s.mu, s.phi, a.n_resolved
+        FROM active a
+        JOIN read_parquet(?) s ON s.user_id = a.user_id
+        LEFT JOIN dim_user du ON du.user_id = a.user_id
+        WHERE du.acquisition_source = ?
+    """
+    con = _connect()
+    try:
+        rows = con.execute(sql, [start, end, str(SKILL_PARQUET), acquisition_source]).fetchall()
+    finally:
+        con.close()
+
+    t = GYAANI_THRESHOLDS["locked"]
+    candidates: list[dict] = []
+    for uid, arch, full_name, acq, mu, phi, n in rows:
+        if mu is None or phi is None:
+            continue
+        mu, phi, n = float(mu), float(phi), int(n)
+        tier = classify_gyaani(mu, phi, n)
+        if tier != "aspirant":
+            continue
+        gap_calls = max(0, t["n_resolved_min"] - n)
+        gap_mu = max(0.0, t["mu_min"] - mu)
+        gap_phi = max(0.0, phi - t["phi_max"])
+        gap_score = (gap_calls / 10.0) + (gap_mu / 200.0) + (gap_phi / 50.0)
+        # Identify the single largest gap (= the message hook).
+        biggest_axis = max(
+            ("calls", gap_calls / 10.0),
+            ("mu", gap_mu / 200.0),
+            ("phi", gap_phi / 50.0),
+            key=lambda kv: kv[1],
+        )[0]
+        hook = (
+            f"{gap_calls} more resolved calls" if biggest_axis == "calls"
+            else f"{gap_mu:.0f} mu points (build accuracy)" if biggest_axis == "mu"
+            else f"phi must drop by {gap_phi:.1f} (make {gap_calls or 'more'} calls to converge)"
+        )
+        candidates.append(dict(
+            user_id=uid,
+            display_name=full_name or "(unnamed)",
+            archetype=arch or "unknown",
+            acquisition_source=acq,
+            tier=tier,
+            mu=mu,
+            phi=phi,
+            n_resolved=n,
+            gap_score=gap_score,
+            biggest_gap_axis=biggest_axis,
+            gap_calls=gap_calls,
+            gap_mu=gap_mu,
+            gap_phi=gap_phi,
+            nudge_hook=hook,
+        ))
+    candidates.sort(key=lambda c: c["gap_score"])
+    top = candidates[:top_n]
+
+    interp = (
+        f"nudge_targets: {len(candidates)} aspirants in cohort; surfacing the "
+        f"top {len(top)} ranked by composite gap-to-locked. Smallest gap = "
+        f"highest leverage."
+    )
+    trace = [
+        f"nudge_targets returned {len(top)}/{len(candidates)} aspirant users.",
+        "ranking: composite gap_score = (calls/10) + (mu/200) + (phi/50); lower = more nudgeable.",
+        f"rule_version={GYAANI_RULE_VERSION}; thresholds from GYAANI_THRESHOLDS['locked'].",
+    ]
+    return MetricResult(
+        trace=trace,
+        metric_name="nudge_targets",
+        value=float(len(top)),
+        confidence=0.90,
+        sample_n=len(candidates),
+        provenance=[
+            f"acquisition:{acquisition_source}",
+            f"aspirant_cohort:{len(candidates)}",
+            f"surfaced:{len(top)}",
+            f"rule_version:{GYAANI_RULE_VERSION}",
+        ],
+        window_open=False,
+        interpretation=interp,
+        definition_version=DEFS["nudge_targets"],
+        computation_sql=sql.strip(),
+        as_of=_now(),
+        breakdowns=dict(
+            targets=top,
+            cohort_size=len(candidates),
+            acquisition_source=acquisition_source,
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Consumption layer: unified per-user fingerprint.
+#
+# Composes gyaani_status (P1) + user_reward_axes (P2) + classify_user_segment
+# (P3) into a single MetricResult so the in-app badge widget can render the
+# user's full state in one round-trip. value = numeric tier
+# (0=none, 1=aspirant, 2=locked) so the metric still satisfies the
+# MetricResult contract; breakdowns carry the rich detail.
+# ---------------------------------------------------------------------------
+
+
+_TIER_RANK = {"none": 0, "aspirant": 1, "locked": 2}
+
+
+def user_fingerprint(user_id: str, week_of: str = "2024-W01") -> MetricResult:
+    """Unified per-user fingerprint: Gyaani tier + reward axes + segment.
+
+    Returns a MetricResult whose:
+      - value is the user's tier rank (0/1/2)
+      - breakdowns.gyaani: the gyaani_status() dict
+      - breakdowns.reward_axes: the user_reward_axes() dict
+      - breakdowns.behavior_segment: the classify_user_segment() dict
+      - breakdowns.identity: optional dim_user lookup (name, archetype)
+
+    The in-app badge widget renders this directly; one fetch, full state.
+    """
+    from metrics.behavior_segments import classify_user_segment
+    from metrics.reward_axes import user_reward_axes
+
+    status = gyaani_status(user_id, week_of)
+    axes = user_reward_axes(user_id, week_of)
+    segment = classify_user_segment(user_id, week_of)
+
+    # Light identity enrichment.
+    con = _connect()
+    try:
+        row = con.execute(
+            "SELECT full_name, archetype_slug, acquisition_source "
+            "FROM dim_user WHERE user_id = ?",
+            [user_id],
+        ).fetchone()
+    finally:
+        con.close()
+    identity = dict(
+        full_name=(row[0] if row else None),
+        archetype_slug=(row[1] if row else None),
+        acquisition_source=(row[2] if row else None),
+    )
+
+    tier = status["tier"]
+    tier_rank = _TIER_RANK.get(tier, 0)
+
+    interp = (
+        f"User {user_id[:8]} ({identity['archetype_slug'] or 'unknown archetype'}): "
+        f"Gyaani tier='{tier}'; top reward axis="
+        f"{axes.get('top_axis') or '(none)'} "
+        f"({axes.get('top_score', 0):.2f}); "
+        f"primary segment={segment.get('primary_segment') or '(none)'}."
+    )
+    trace = [
+        f"user_fingerprint(user_id={user_id[:8]}): tier_rank={tier_rank}.",
+        f"gyaani rule_version={status.get('rule_version', '?')}.",
+        f"reward axes rule_version={axes.get('rule_version', '?')}.",
+        f"segment rule_version={segment.get('rule_version', '?')}.",
+    ]
+    return MetricResult(
+        trace=trace,
+        metric_name="user_fingerprint",
+        value=float(tier_rank),
+        confidence=0.90,
+        sample_n=1,
+        provenance=[
+            f"user_id:{user_id}",
+            f"tier:{tier}",
+            f"top_axis:{axes.get('top_axis') or 'none'}",
+            f"primary_segment:{segment.get('primary_segment') or 'none'}",
+        ],
+        window_open=False,
+        interpretation=interp,
+        definition_version=DEFS["user_fingerprint"],
+        computation_sql="-- composite of gyaani_status + user_reward_axes + classify_user_segment --",
+        as_of=_now(),
+        breakdowns=dict(
+            gyaani=status,
+            reward_axes=axes,
+            behavior_segment=segment,
+            identity=identity,
+            tier_rank=tier_rank,
         ),
     )

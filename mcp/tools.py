@@ -55,6 +55,8 @@ from metrics.definitions import (
     calls_with_explanation_rate as _calls_with_explanation_rate,
     funnel_stages as _funnel_stages,
     insights_generate as _insights_generate,
+    nudge_targets as _nudge_targets,
+    user_fingerprint as _user_fingerprint,
 )
 from metrics.skill import get_skill_distribution as _get_skill_distribution
 
@@ -210,6 +212,17 @@ def insights_generate(week_of: str = "2024-W01", top_n: int = 10) -> MetricResul
     return _insights_generate(week_of, top_n)
 
 
+@tool_result
+def nudge_targets(week_of: str = "2024-W01", top_n: int = 50,
+                  acquisition_source: str = "unstop") -> MetricResult:
+    return _nudge_targets(week_of, top_n, acquisition_source)
+
+
+@tool_result
+def user_fingerprint(user_id: str, week_of: str = "2024-W01") -> MetricResult:
+    return _user_fingerprint(user_id, week_of)
+
+
 TOOLS: dict[str, Callable[..., MetricResult]] = {
     "weekly_active_posters": weekly_active_posters,
     "time_to_first_action": time_to_first_action,
@@ -240,6 +253,8 @@ TOOLS: dict[str, Callable[..., MetricResult]] = {
     "calls_with_explanation_rate": calls_with_explanation_rate,
     "funnel_stages": funnel_stages,
     "insights_generate": insights_generate,
+    "nudge_targets": nudge_targets,
+    "user_fingerprint": user_fingerprint,
 }
 
 
