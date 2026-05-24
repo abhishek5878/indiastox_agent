@@ -57,6 +57,7 @@ from metrics.definitions import (
     insights_generate as _insights_generate,
     nudge_targets as _nudge_targets,
     user_fingerprint as _user_fingerprint,
+    briefing as _briefing,
 )
 from metrics.skill import get_skill_distribution as _get_skill_distribution
 
@@ -223,6 +224,11 @@ def user_fingerprint(user_id: str, week_of: str = "2024-W01") -> MetricResult:
     return _user_fingerprint(user_id, week_of)
 
 
+@tool_result
+def briefing(week_of: str = "2024-W01") -> MetricResult:
+    return _briefing(week_of)
+
+
 TOOLS: dict[str, Callable[..., MetricResult]] = {
     "weekly_active_posters": weekly_active_posters,
     "time_to_first_action": time_to_first_action,
@@ -255,6 +261,7 @@ TOOLS: dict[str, Callable[..., MetricResult]] = {
     "insights_generate": insights_generate,
     "nudge_targets": nudge_targets,
     "user_fingerprint": user_fingerprint,
+    "briefing": briefing,
 }
 
 

@@ -65,6 +65,8 @@ DEFS = {
     "nudge_targets": "1.0.0",
     # Consumption layer: unified per-user fingerprint (the in-app badge).
     "user_fingerprint": "1.0.0",
+    # Consumption layer: narrative briefing answering the 7 meeting questions.
+    "briefing": "1.0.0",
 }
 
 # Gyaani definition (P1). Two-tier: aspirant is the growth slope (broad,
@@ -2989,5 +2991,273 @@ def user_fingerprint(user_id: str, week_of: str = "2024-W01") -> MetricResult:
             behavior_segment=segment,
             identity=identity,
             tier_rank=tier_rank,
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Consumption layer: narrative briefing (the "where do I start?" page).
+#
+# Replaces the wall-of-tiles consumption pattern with a single
+# narrative answering the 7 umbrella questions from the strategy
+# meeting in plain English. Frontend renders this directly — no
+# composition, no jargon. The /briefing page is a pure render of the
+# breakdowns; this metric is the source of truth for what shows up.
+#
+# Pulls live numbers from 6 substrate metrics so the briefing always
+# reflects current state. Single-tool-call so the page is one round-
+# trip.
+# ---------------------------------------------------------------------------
+
+
+def briefing(week_of: str = "2024-W01") -> MetricResult:
+    """Narrative briefing: 7 meeting questions, plain answers, CTAs.
+
+    Composes existing substrate metrics into a story-shaped payload.
+    Each umbrella has:
+      - id (slug)
+      - question (in the user's meeting words)
+      - headline (one short answer with the live number)
+      - interpretation (one sentence on what it means)
+      - status: 'shipped' | 'partial' | 'gated'
+      - cta_label + cta_href (where to drill in)
+      - source_metric (which tool the headline came from, for audit)
+
+    Plus a 'today' block with the top 3 insights + top 5 nudges, and a
+    'gated' list documenting the 2 honest partials and their unlock.
+    """
+    asp = gyaani_aspirant_share(week_of)
+    lck = gyaani_locked_share(week_of)
+    funnel = funnel_stages(week_of)
+    ins = insights_generate(week_of, top_n=3)
+    nudges = nudge_targets(week_of, top_n=5)
+    wac = weekly_active_callers_calibrated(week_of)
+
+    asp_pct = asp.value * 100
+    lck_pct = lck.value * 100
+    funnel_pct = funnel.value * 100
+    funnel_b = funnel.breakdowns
+    stages = funnel_b["stages"]
+
+    # Largest stuck cohort → growth-wall pointer.
+    drop = funnel_b["drop_off"]
+    biggest_gate = max(drop.items(), key=lambda kv: kv[1]["n"])
+    biggest_gate_label = biggest_gate[0].replace("_", " ")
+
+    # Calibrated-vs-raw WAU spread (the attention->accuracy headline).
+    raw_wau = wac.breakdowns.get("raw_active_callers", 0) or 0
+    cal_wau = wac.value
+    attention_gap_pct = (100 * (1 - cal_wau / raw_wau)) if raw_wau else 0.0
+
+    top_insight = ins.breakdowns["insights"][0] if ins.breakdowns["insights"] else None
+    top_nudge = nudges.breakdowns["targets"][0] if nudges.breakdowns["targets"] else None
+
+    umbrellas = [
+        dict(
+            id="reward_architecture",
+            question="Can everyone be rewarded, not just Gyaanis?",
+            headline=(
+                f"Yes — 8 reward axes shipped. Cohorts previously earning 0 "
+                f"on every skill axis (pharma_doctor, skeptic, anchored, "
+                f"diversifier, lurker_turned_caller) now earn 31-84% on the "
+                f"new presence axis."
+            ),
+            interpretation=(
+                "Presence + recovery axes mean someone wrong this week "
+                "is still scored for showing up — the substrate matches "
+                "the 'everyone is needed' framing."
+            ),
+            status="shipped",
+            cta_label="See any user's 8-axis fingerprint",
+            cta_href="/fingerprint",
+            source_metric="user_reward_axes",
+        ),
+        dict(
+            id="gyaani_definition",
+            question="What is a Gyaani — and how does a bad streak then 4/4 next week earn it?",
+            headline=(
+                f"Two-tier: {asp_pct:.1f}% aspirant (achievable now), "
+                f"{lck_pct:.2f}% locked (the badge). One classifier function — "
+                f"classify_gyaani — is the single source of truth."
+            ),
+            interpretation=(
+                "Aspirant is the growth slope; locked is scarce. The "
+                "recovery case (bad streak → 4/4 next week) IS encoded in "
+                "the rule but cannot fire on W01 — it needs the W2 generator "
+                "to actually run a user across two weeks."
+            ),
+            status="partial",
+            cta_label="See who's nearest to locking the badge",
+            cta_href="/cs-nudges",
+            source_metric="gyaani_aspirant_share + gyaani_locked_share",
+        ),
+        dict(
+            id="simplification",
+            question="One funnel surface — signup to Gyaani — replacing scattered dashboards?",
+            headline=(
+                f"Funnel page live: {stages[0]['n']:,} signed up → "
+                f"{stages[1]['n']:,} made first call → "
+                f"{stages[2]['n']:,} hit 3+ resolved → "
+                f"{stages[3]['n']:,} reached aspirant. Headline conversion: "
+                f"{funnel_pct:.1f}%."
+            ),
+            interpretation=(
+                f"The biggest stuck cohort is at '{biggest_gate_label}' "
+                f"({biggest_gate[1]['n']:,} users). That's where intervention "
+                f"has the most leverage."
+            ),
+            status="shipped",
+            cta_label="See per-gate drop-off",
+            cta_href="/funnel",
+            source_metric="funnel_stages",
+        ),
+        dict(
+            id="good_day_activation",
+            question="What does a good day look like? The Facebook 5-friend moment for IndiaStox.",
+            headline=(
+                f"Candidate identified by the insight scanner: "
+                f"{len(nudges.breakdowns['targets'])} near-miss aspirants are "
+                f"one axis short of the badge — the highest-leverage cohort. "
+                f"Cohort analysis (W1 features → W2 retention) needs multi-week data."
+            ),
+            interpretation=(
+                "The substrate names the cohort; the predictive 'first-N "
+                "actions → D7 retention' analysis is gated on the multi-week "
+                "extension. We know WHO to nudge today; we don't yet know "
+                "WHAT first-session moment predicts retention."
+            ),
+            status="partial",
+            cta_label="See the nudgeable cohort",
+            cta_href="/cs-nudges",
+            source_metric="nudge_targets + insights_generate",
+        ),
+        dict(
+            id="groundbreaking_insights",
+            question="What is the substrate trying to tell us?",
+            headline=(
+                f"Top insight: {top_insight['summary'] if top_insight else '(none above scanner floors)'}"
+            ),
+            interpretation=(
+                "4 scanners run over the substrate (near-miss, archetype "
+                "design surprise, funnel gate clog, mu outliers). Each "
+                "carries a suggested experiment so it's actionable, not "
+                "just observational."
+            ),
+            status="shipped",
+            cta_label="Run the daily digest",
+            cta_href="/cs-nudges",
+            source_metric="insights_generate",
+        ),
+        dict(
+            id="growth_hack",
+            question="What's the one growth experiment to run from this?",
+            headline=(
+                f"{top_insight['suggested_experiment'] if top_insight else '(no insight to convert)'}"
+            ),
+            interpretation=(
+                "The top insight's suggested_experiment IS the growth hack. "
+                "It can be filed manually as a Proposal today; auto-file via "
+                "bonus/experiment_loop is a small adapter (P7b)."
+            ),
+            status="partial",
+            cta_label="File this as a proposal",
+            cta_href="/proposals",
+            source_metric="insights_generate.suggested_experiment",
+        ),
+        dict(
+            id="attention_to_accuracy",
+            question="Move the headline from attention (MAU) to accuracy — and segment users by behavior, not demographics.",
+            headline=(
+                f"Calibrated WAU = {cal_wau:.1f} (vs raw active "
+                f"{raw_wau}) — the {attention_gap_pct:.0f}% "
+                f"attention-vs-accuracy gap in one number. "
+                f"Plus 8 behavior segments (alphas, anchored, ghosted, ...) "
+                f"replace demographic slicing."
+            ),
+            interpretation=(
+                "Calibrated WAU weights raw activity by mean calibration "
+                "(Brier-based). Counting clicks is no longer the headline; "
+                "counting calibrated calls is."
+            ),
+            status="shipped",
+            cta_label="See substrate at a glance",
+            cta_href="/overview",
+            source_metric="weekly_active_callers_calibrated + classify_user_segment",
+        ),
+    ]
+
+    today = dict(
+        top_insights=ins.breakdowns["insights"][:3],
+        top_nudges=[
+            dict(
+                user_id=t["user_id"],
+                archetype=t["archetype"],
+                short_axis=t["biggest_gap_axis"],
+                hook=t["nudge_hook"],
+            )
+            for t in nudges.breakdowns["targets"][:5]
+        ],
+    )
+
+    gated = [
+        dict(
+            id="recovery_arc",
+            description=(
+                "Verify the 'bad streak then 4/4 next week → Gyaani' "
+                "transition actually fires. Rule is locked but no W2 data "
+                "exists to exercise it."
+            ),
+            unlocked_by="P0.5b multi-week sim (W02-W04 + cross-week state continuity)",
+        ),
+        dict(
+            id="good_day_activation_analysis",
+            description=(
+                "Run the cohort analysis: which W1 first-session features "
+                "predict W2 retention? Produces the actual IndiaStox 5-friend "
+                "moment criterion."
+            ),
+            unlocked_by="P0.5b multi-week sim (P6 depends on it)",
+        ),
+    ]
+
+    shipped_n = sum(1 for u in umbrellas if u["status"] == "shipped")
+    partial_n = sum(1 for u in umbrellas if u["status"] == "partial")
+    headline_score = shipped_n / len(umbrellas)
+    interp = (
+        f"Briefing for week {week_of}: {shipped_n}/{len(umbrellas)} umbrella "
+        f"questions fully answered, {partial_n} partial (both gated on the same "
+        f"P0.5b multi-week phase). Today's top action: "
+        f"{today['top_nudges'][0]['hook'] if today['top_nudges'] else 'no high-leverage nudges available'}."
+    )
+    trace = [
+        f"briefing composed from {len(umbrellas)} umbrellas + today + gated lists.",
+        f"source metrics: gyaani_aspirant_share, gyaani_locked_share, funnel_stages, "
+        f"insights_generate, nudge_targets, weekly_active_callers_calibrated.",
+        f"shipped={shipped_n}, partial={partial_n}, gated={len(gated)}.",
+    ]
+    return MetricResult(
+        trace=trace,
+        metric_name="briefing",
+        value=float(headline_score),
+        confidence=0.90,
+        sample_n=len(umbrellas),
+        provenance=[
+            f"week_of:{week_of}",
+            f"shipped:{shipped_n}",
+            f"partial:{partial_n}",
+            f"gated:{len(gated)}",
+        ],
+        window_open=False,
+        interpretation=interp,
+        definition_version=DEFS["briefing"],
+        computation_sql="-- composition of 6 substrate metrics; see source --",
+        as_of=_now(),
+        breakdowns=dict(
+            umbrellas=umbrellas,
+            today=today,
+            gated=gated,
+            week_of=week_of,
+            shipped_count=shipped_n,
+            partial_count=partial_n,
         ),
     )

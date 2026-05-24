@@ -7,26 +7,31 @@ import { llm } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const NAV = [
-  { href: "/",          label: "Living world",    group: "see" },
-  { href: "/overview",  label: "Overview",        group: "see" },
-  { href: "/funnel",    label: "Growth funnel",   group: "see" },
-  { href: "/metrics",   label: "Metrics",         group: "explore" },
-  { href: "/fingerprint", label: "User fingerprint", group: "explore" },
-  { href: "/identity",  label: "Identity graph",  group: "explore" },
-  { href: "/audit",     label: "Audit trail",     group: "explore" },
-  { href: "/eval",      label: "Eval scorecard",  group: "evaluate" },
-  { href: "/proposals", label: "Proposals",       group: "evaluate" },
+  // Story — the consumption entry points
+  { href: "/briefing", label: "Briefing",        group: "story" },
+  { href: "/",         label: "Living world",    group: "story" },
+  { href: "/funnel",   label: "Growth funnel",   group: "story" },
+  // Act — what to do today
+  { href: "/cs-nudges", label: "Nudge targets",  group: "act" },
   { href: "/cs",        label: "CS interventions", group: "act" },
-  { href: "/cs-nudges", label: "Nudge targets",   group: "act" },
-  { href: "/chat",      label: "Ask the agent",   group: "act" },
+  { href: "/proposals", label: "Proposals",      group: "act" },
+  { href: "/chat",      label: "Ask the agent",  group: "act" },
+  // Drill — per-user / per-substrate detail
+  { href: "/fingerprint", label: "User fingerprint", group: "drill" },
+  { href: "/overview",  label: "Substrate overview", group: "drill" },
+  { href: "/metrics",   label: "Metrics catalog", group: "drill" },
+  { href: "/identity",  label: "Identity graph", group: "drill" },
+  // Deep — engineering / audit
+  { href: "/audit",     label: "Audit trail",    group: "deep" },
+  { href: "/eval",      label: "Eval scorecard", group: "deep" },
 ];
 
-const GROUPS = ["see", "explore", "evaluate", "act"] as const;
+const GROUPS = ["story", "act", "drill", "deep"] as const;
 const GROUP_LABELS: Record<string, string> = {
-  see: "See it move",
-  explore: "Explore the substrate",
-  evaluate: "Evaluate",
+  story: "See the story",
   act: "Take action",
+  drill: "Drill in",
+  deep: "Engineering / audit",
 };
 
 export function Sidebar() {
