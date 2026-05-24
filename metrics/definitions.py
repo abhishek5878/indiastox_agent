@@ -2532,7 +2532,7 @@ def funnel_stages(week_of: str = "2024-W01", acquisition_source: str = "unstop")
     conversion rate (the headline) and whose `breakdowns` carry the
     per-stage detail the frontend renders.
     """
-    from metrics.behavior_segments import classify_user_segment
+    from metrics.behavior_segments import classify_user_segment_from_data
 
     start, end = _week_bounds(week_of)
     if not SKILL_PARQUET.exists():
@@ -2564,71 +2564,109 @@ def funnel_stages(week_of: str = "2024-W01", acquisition_source: str = "unstop")
         FROM per_user pu
         LEFT JOIN read_parquet(?) s ON s.user_id = pu.user_id
     """
+    # Single connection for the entire funnel computation — no per-user
+    # nested opens. Closes only after the seg-mix bulk fetches complete
+    # so we never re-attach indiastox within the same request.
     con = _connect()
     try:
         rows = con.execute(sql, [acquisition_source, start, end, str(SKILL_PARQUET)]).fetchall()
+
+        n_signed = len(rows)
+        n_called: list[str] = []
+        n_three: list[str] = []
+        n_aspirant: list[str] = []
+        n_locked = 0
+        stuck_after_signup: list[str] = []
+        stuck_after_call: list[str] = []
+        stuck_after_three: list[str] = []
+
+        for uid, n_made, n_resolved, mu, phi in rows:
+            n_made = int(n_made or 0)
+            n_resolved = int(n_resolved or 0)
+            if n_made == 0:
+                stuck_after_signup.append(uid)
+                continue
+            n_called.append(uid)
+            if n_resolved < 3:
+                stuck_after_call.append(uid)
+                continue
+            n_three.append(uid)
+            if mu is None or phi is None:
+                stuck_after_three.append(uid)
+                continue
+            tier = classify_gyaani(float(mu), float(phi), n_resolved)
+            if tier == "none":
+                stuck_after_three.append(uid)
+                continue
+            n_aspirant.append(uid)
+            if tier == "locked":
+                n_locked += 1
+
+        # Build the segment-mix per gate via batch fetches on the SAME
+        # connection. Each call to `_seg_mix` pulls all sampled users'
+        # calls + mu in one query, then classifies in memory via the
+        # pure `classify_user_segment_from_data` helper. Avoids the
+        # per-user nested-connection pattern that triggered the
+        # production DuckDB attach conflict on Render.
+        def _seg_mix(user_ids: list[str], cap: int = 60) -> dict[str, int]:
+            from collections import Counter
+            sampled = user_ids[:cap]
+            if not sampled:
+                return {}
+            placeholders = ",".join(["?"] * len(sampled))
+            calls_rows = con.execute(
+                f"""
+                SELECT user_id, made_at, stock_symbol, direction,
+                       confidence_stars, outcome, is_outcome_resolved
+                FROM fact_prediction
+                WHERE user_id IN ({placeholders})
+                  AND made_at >= ? AND made_at < ?
+                ORDER BY user_id, made_at ASC
+                """,
+                [*sampled, start, end],
+            ).fetchall()
+            mu_rows = con.execute(
+                f"""
+                SELECT user_id, mu
+                FROM read_parquet(?)
+                WHERE user_id IN ({placeholders})
+                """,
+                [str(SKILL_PARQUET), *sampled],
+            ).fetchall()
+
+            calls_by_user: dict[str, list[tuple]] = {uid: [] for uid in sampled}
+            for r in calls_rows:
+                calls_by_user.setdefault(r[0], []).append(r[1:])  # drop user_id; preserve schema
+            mu_by_user: dict[str, Optional[float]] = {
+                r[0]: (float(r[1]) if r[1] is not None else None) for r in mu_rows
+            }
+
+            counts: Counter = Counter()
+            for uid in sampled:
+                r = classify_user_segment_from_data(
+                    uid, calls_by_user.get(uid, []), mu_by_user.get(uid),
+                )
+                counts[r["primary_segment"] or "(none)"] += 1
+            return dict(counts.most_common())
+
+        stages = [
+            dict(name="signed_up", n=n_signed, label="Signed up"),
+            dict(name="made_first_call", n=len(n_called), label="Made first call"),
+            dict(name="resolved_three_plus", n=len(n_three), label="3+ resolved calls"),
+            dict(name="gyaani_aspirant", n=len(n_aspirant), label="Gyaani aspirant"),
+        ]
+        for i, stage in enumerate(stages):
+            prior_n = stages[i - 1]["n"] if i > 0 else stage["n"]
+            stage["conversion_from_prior"] = (stage["n"] / prior_n) if prior_n else 0.0
+            stage["share_of_signup"] = (stage["n"] / n_signed) if n_signed else 0.0
+
+        drop_off = dict(
+            after_signup=dict(n=len(stuck_after_signup), segment_mix=_seg_mix(stuck_after_signup)),
+            after_first_call=dict(n=len(stuck_after_call), segment_mix=_seg_mix(stuck_after_call)),
+            after_three_resolved=dict(n=len(stuck_after_three), segment_mix=_seg_mix(stuck_after_three)),
+        )
     finally:
         con.close()
-
-    n_signed = len(rows)
-    n_called: list[str] = []
-    n_three: list[str] = []
-    n_aspirant: list[str] = []
-    n_locked = 0
-    stuck_after_signup: list[str] = []
-    stuck_after_call: list[str] = []
-    stuck_after_three: list[str] = []
-
-    for uid, n_made, n_resolved, mu, phi in rows:
-        n_made = int(n_made or 0)
-        n_resolved = int(n_resolved or 0)
-        if n_made == 0:
-            stuck_after_signup.append(uid)
-            continue
-        n_called.append(uid)
-        if n_resolved < 3:
-            stuck_after_call.append(uid)
-            continue
-        n_three.append(uid)
-        if mu is None or phi is None:
-            stuck_after_three.append(uid)
-            continue
-        tier = classify_gyaani(float(mu), float(phi), n_resolved)
-        if tier == "none":
-            stuck_after_three.append(uid)
-            continue
-        n_aspirant.append(uid)
-        if tier == "locked":
-            n_locked += 1
-
-    def _seg_mix(user_ids: list[str], cap: int = 60) -> dict[str, int]:
-        """Classify a (capped) sample of stuck users + return segment
-        frequencies. Cap keeps the funnel call fast even with thousands
-        of ghosted users."""
-        from collections import Counter
-        sampled = user_ids[:cap]
-        counts: Counter = Counter()
-        for uid in sampled:
-            r = classify_user_segment(uid, week_of)
-            counts[r["primary_segment"] or "(none)"] += 1
-        return dict(counts.most_common())
-
-    stages = [
-        dict(name="signed_up", n=n_signed, label="Signed up"),
-        dict(name="made_first_call", n=len(n_called), label="Made first call"),
-        dict(name="resolved_three_plus", n=len(n_three), label="3+ resolved calls"),
-        dict(name="gyaani_aspirant", n=len(n_aspirant), label="Gyaani aspirant"),
-    ]
-    for i, stage in enumerate(stages):
-        prior_n = stages[i - 1]["n"] if i > 0 else stage["n"]
-        stage["conversion_from_prior"] = (stage["n"] / prior_n) if prior_n else 0.0
-        stage["share_of_signup"] = (stage["n"] / n_signed) if n_signed else 0.0
-
-    drop_off = dict(
-        after_signup=dict(n=len(stuck_after_signup), segment_mix=_seg_mix(stuck_after_signup)),
-        after_first_call=dict(n=len(stuck_after_call), segment_mix=_seg_mix(stuck_after_call)),
-        after_three_resolved=dict(n=len(stuck_after_three), segment_mix=_seg_mix(stuck_after_three)),
-    )
 
     headline_rate = float(len(n_aspirant) / n_signed) if n_signed else 0.0
     interp = (
@@ -2640,7 +2678,7 @@ def funnel_stages(week_of: str = "2024-W01", acquisition_source: str = "unstop")
     trace = [
         f"funnel_stages headline = {headline_rate:.4f} = {len(n_aspirant)}/{n_signed} aspirant/signup.",
         "stages are strict subsets; conversion_from_prior is each row's funnel coefficient.",
-        "drop-off segment mix uses classify_user_segment from metrics.behavior_segments (P3).",
+        "drop-off segment mix uses classify_user_segment_from_data (single-conn batch path).",
     ]
     return MetricResult(
         trace=trace,

@@ -270,27 +270,20 @@ def _mu_for_user(user_id: str) -> Optional[float]:
     return float(row[0]) if row and row[0] is not None else None
 
 
-def classify_user_segment(user_id: str, week_of: str = "2024-W01") -> dict:
-    """Per-user segmentation — score on every segment + dominant pick.
+def classify_user_segment_from_data(
+    user_id: str,
+    calls: list[tuple],
+    mu: Optional[float],
+) -> dict:
+    """Pure classification given pre-fetched per-user data — no DB I/O.
 
-    Returns:
-      {
-        "user_id": str,
-        "rule_version": "1.0.0",
-        "segments": {
-            "ghosted":       {"score": float, "n": int, ...},
-            ...
-        },
-        "primary_segment": str | None,    # highest-scoring real segment
-        "primary_score": float,
-      }
-
-    primary_segment is None when every real segment scores 0.0 (an
-    edge case — usually a user with 1-2 calls that don't trip any
-    gate). Stubbed segments are excluded from primary selection.
+    Same contract as `classify_user_segment` but takes (calls, mu)
+    inline so callers that have already batch-fetched the cohort can
+    avoid N+1 DB roundtrips. Used by `funnel_stages` to score stuck
+    users without opening a fresh connection per user (which
+    triggered a production DuckDB attach conflict on Render under
+    a long-lived uvicorn worker).
     """
-    calls = _user_calls(user_id, week_of)
-    mu = _mu_for_user(user_id)
     segments_out: dict[str, dict] = {}
     for name in SEGMENTS:
         segments_out[name] = _SCORERS[name](calls, mu)
@@ -315,3 +308,16 @@ def classify_user_segment(user_id: str, week_of: str = "2024-W01") -> dict:
         primary_segment=primary,
         primary_score=score,
     )
+
+
+def classify_user_segment(user_id: str, week_of: str = "2024-W01") -> dict:
+    """Per-user segmentation — score on every segment + dominant pick.
+
+    Thin convenience wrapper that fetches the per-user data and
+    delegates to `classify_user_segment_from_data`. Callers with
+    pre-fetched data (e.g. funnel_stages batching the stuck cohort)
+    should call the pure variant directly.
+    """
+    calls = _user_calls(user_id, week_of)
+    mu = _mu_for_user(user_id)
+    return classify_user_segment_from_data(user_id, calls, mu)
