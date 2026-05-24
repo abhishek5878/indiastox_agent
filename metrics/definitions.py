@@ -57,6 +57,8 @@ DEFS = {
     "high_confidence_call_ratio": "1.0.0",
     "daily_gyaani_aspirant_count": "1.0.0",
     "calls_with_explanation_rate": "0.0.0-stub",
+    # P5 funnel view (one metric serves the whole funnel page).
+    "funnel_stages": "1.0.0",
 }
 
 # Gyaani definition (P1). Two-tier: aspirant is the growth slope (broad,
@@ -2489,4 +2491,176 @@ def calls_with_explanation_rate(week_of: str = "2024-W01") -> MetricResult:
         computation_sql="-- stubbed: requires fact_prediction.rationale field --",
         as_of=_now(),
         breakdowns=dict(status="stub"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Funnel (P5). Single metric returning the four stage counts + conversion
+# rates + segment composition of users stuck at each gate.
+#
+# The frontend funnel page is a pure render of this metric's breakdowns —
+# no client-side metric composition (per the substrate's defined-once
+# rule). If the funnel shape needs to change (re-stage, new gate), edit
+# this function and only this function.
+# ---------------------------------------------------------------------------
+
+
+def funnel_stages(week_of: str = "2024-W01", acquisition_source: str = "unstop") -> MetricResult:
+    """Four-stage growth funnel for IndiaStox cohort.
+
+    Stages (each is a strict subset of the prior):
+      1. Signed up         — dim_user row exists in the acquisition cohort.
+      2. Made first call   — at least 1 prediction in W01.
+      3. Made >= 3 calls   — substantive engagement, the bar that lets
+                             Glicko-2 begin shaping mu/phi meaningfully.
+      4. Gyaani-aspirant   — classify_gyaani == 'aspirant' or 'locked'.
+                             Tracks the badge slope.
+      5. (sub-tier) Locked — classify_gyaani == 'locked'. Reported as a
+                             sub-count of stage 4 in breakdowns.
+
+    Drop-off segments per gate: of the users who reached stage N but
+    NOT stage N+1, what segment do they classify as? Surfaces the
+    "growth wall" the product can target with nudges.
+
+    Returns a MetricResult whose `value` is the overall signup -> aspirant
+    conversion rate (the headline) and whose `breakdowns` carry the
+    per-stage detail the frontend renders.
+    """
+    from metrics.behavior_segments import classify_user_segment
+
+    start, end = _week_bounds(week_of)
+    if not SKILL_PARQUET.exists():
+        raise FileNotFoundError(
+            f"skill ratings missing: {SKILL_PARQUET}. Run `make skill` first."
+        )
+
+    sql = """
+        WITH cohort AS (
+          SELECT DISTINCT u.user_id
+          FROM dim_user u
+          WHERE u.acquisition_source = ?
+        ),
+        per_user AS (
+          SELECT c.user_id,
+                 COALESCE(fp.n_made, 0) AS n_made,
+                 COALESCE(fp.n_resolved, 0) AS n_resolved
+          FROM cohort c
+          LEFT JOIN (
+            SELECT user_id,
+                   COUNT(*) AS n_made,
+                   SUM(CASE WHEN is_outcome_resolved THEN 1 ELSE 0 END) AS n_resolved
+            FROM fact_prediction
+            WHERE made_at >= ? AND made_at < ?
+            GROUP BY user_id
+          ) fp ON fp.user_id = c.user_id
+        )
+        SELECT pu.user_id, pu.n_made, pu.n_resolved, s.mu, s.phi
+        FROM per_user pu
+        LEFT JOIN read_parquet(?) s ON s.user_id = pu.user_id
+    """
+    con = _connect()
+    try:
+        rows = con.execute(sql, [acquisition_source, start, end, str(SKILL_PARQUET)]).fetchall()
+    finally:
+        con.close()
+
+    n_signed = len(rows)
+    n_called: list[str] = []
+    n_three: list[str] = []
+    n_aspirant: list[str] = []
+    n_locked = 0
+    stuck_after_signup: list[str] = []
+    stuck_after_call: list[str] = []
+    stuck_after_three: list[str] = []
+
+    for uid, n_made, n_resolved, mu, phi in rows:
+        n_made = int(n_made or 0)
+        n_resolved = int(n_resolved or 0)
+        if n_made == 0:
+            stuck_after_signup.append(uid)
+            continue
+        n_called.append(uid)
+        if n_resolved < 3:
+            stuck_after_call.append(uid)
+            continue
+        n_three.append(uid)
+        if mu is None or phi is None:
+            stuck_after_three.append(uid)
+            continue
+        tier = classify_gyaani(float(mu), float(phi), n_resolved)
+        if tier == "none":
+            stuck_after_three.append(uid)
+            continue
+        n_aspirant.append(uid)
+        if tier == "locked":
+            n_locked += 1
+
+    def _seg_mix(user_ids: list[str], cap: int = 60) -> dict[str, int]:
+        """Classify a (capped) sample of stuck users + return segment
+        frequencies. Cap keeps the funnel call fast even with thousands
+        of ghosted users."""
+        from collections import Counter
+        sampled = user_ids[:cap]
+        counts: Counter = Counter()
+        for uid in sampled:
+            r = classify_user_segment(uid, week_of)
+            counts[r["primary_segment"] or "(none)"] += 1
+        return dict(counts.most_common())
+
+    stages = [
+        dict(name="signed_up", n=n_signed, label="Signed up"),
+        dict(name="made_first_call", n=len(n_called), label="Made first call"),
+        dict(name="resolved_three_plus", n=len(n_three), label="3+ resolved calls"),
+        dict(name="gyaani_aspirant", n=len(n_aspirant), label="Gyaani aspirant"),
+    ]
+    for i, stage in enumerate(stages):
+        prior_n = stages[i - 1]["n"] if i > 0 else stage["n"]
+        stage["conversion_from_prior"] = (stage["n"] / prior_n) if prior_n else 0.0
+        stage["share_of_signup"] = (stage["n"] / n_signed) if n_signed else 0.0
+
+    drop_off = dict(
+        after_signup=dict(n=len(stuck_after_signup), segment_mix=_seg_mix(stuck_after_signup)),
+        after_first_call=dict(n=len(stuck_after_call), segment_mix=_seg_mix(stuck_after_call)),
+        after_three_resolved=dict(n=len(stuck_after_three), segment_mix=_seg_mix(stuck_after_three)),
+    )
+
+    headline_rate = float(len(n_aspirant) / n_signed) if n_signed else 0.0
+    interp = (
+        f"Funnel ({acquisition_source}, {week_of}): {n_signed} signed up -> "
+        f"{len(n_called)} made first call -> {len(n_three)} hit 3 resolved -> "
+        f"{len(n_aspirant)} reached Gyaani-aspirant ({n_locked} locked). "
+        f"Signup -> aspirant conversion = {headline_rate:.1%}."
+    )
+    trace = [
+        f"funnel_stages headline = {headline_rate:.4f} = {len(n_aspirant)}/{n_signed} aspirant/signup.",
+        "stages are strict subsets; conversion_from_prior is each row's funnel coefficient.",
+        "drop-off segment mix uses classify_user_segment from metrics.behavior_segments (P3).",
+    ]
+    return MetricResult(
+        trace=trace,
+        metric_name="funnel_stages",
+        value=headline_rate,
+        confidence=0.90,
+        sample_n=n_signed,
+        provenance=[
+            f"acquisition:{acquisition_source}",
+            f"signed_up:{n_signed}",
+            f"made_first_call:{len(n_called)}",
+            f"resolved_three_plus:{len(n_three)}",
+            f"gyaani_aspirant:{len(n_aspirant)}",
+            f"gyaani_locked:{n_locked}",
+            f"rule_version:{GYAANI_RULE_VERSION}",
+        ],
+        window_open=False,
+        interpretation=interp,
+        definition_version=DEFS["funnel_stages"],
+        computation_sql=sql.strip(),
+        as_of=_now(),
+        breakdowns=dict(
+            stages=stages,
+            locked=n_locked,
+            drop_off=drop_off,
+            acquisition_source=acquisition_source,
+            week_of=week_of,
+        ),
     )

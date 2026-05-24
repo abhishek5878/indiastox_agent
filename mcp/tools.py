@@ -47,6 +47,13 @@ from metrics.definitions import (
     user_disengagement_rate as _user_disengagement_rate,
     ghost_recovery_rate as _ghost_recovery_rate,
     proposal_lift_calibration_index as _proposal_lift_calibration_index,
+    gyaani_aspirant_share as _gyaani_aspirant_share,
+    gyaani_locked_share as _gyaani_locked_share,
+    weekly_active_callers_calibrated as _weekly_active_callers_calibrated,
+    high_confidence_call_ratio as _high_confidence_call_ratio,
+    daily_gyaani_aspirant_count as _daily_gyaani_aspirant_count,
+    calls_with_explanation_rate as _calls_with_explanation_rate,
+    funnel_stages as _funnel_stages,
 )
 from metrics.skill import get_skill_distribution as _get_skill_distribution
 
@@ -162,6 +169,41 @@ def proposal_lift_calibration_index() -> MetricResult:
     return _proposal_lift_calibration_index()
 
 
+@tool_result
+def gyaani_aspirant_share(week_of: str = "2024-W01") -> MetricResult:
+    return _gyaani_aspirant_share(week_of)
+
+
+@tool_result
+def gyaani_locked_share(week_of: str = "2024-W01") -> MetricResult:
+    return _gyaani_locked_share(week_of)
+
+
+@tool_result
+def weekly_active_callers_calibrated(week_of: str = "2024-W01") -> MetricResult:
+    return _weekly_active_callers_calibrated(week_of)
+
+
+@tool_result
+def high_confidence_call_ratio(week_of: str = "2024-W01") -> MetricResult:
+    return _high_confidence_call_ratio(week_of)
+
+
+@tool_result
+def daily_gyaani_aspirant_count(week_of: str = "2024-W01") -> MetricResult:
+    return _daily_gyaani_aspirant_count(week_of)
+
+
+@tool_result
+def calls_with_explanation_rate(week_of: str = "2024-W01") -> MetricResult:
+    return _calls_with_explanation_rate(week_of)
+
+
+@tool_result
+def funnel_stages(week_of: str = "2024-W01", acquisition_source: str = "unstop") -> MetricResult:
+    return _funnel_stages(week_of, acquisition_source)
+
+
 TOOLS: dict[str, Callable[..., MetricResult]] = {
     "weekly_active_posters": weekly_active_posters,
     "time_to_first_action": time_to_first_action,
@@ -184,6 +226,13 @@ TOOLS: dict[str, Callable[..., MetricResult]] = {
     "user_disengagement_rate": user_disengagement_rate,
     "ghost_recovery_rate": ghost_recovery_rate,
     "proposal_lift_calibration_index": proposal_lift_calibration_index,
+    "gyaani_aspirant_share": gyaani_aspirant_share,
+    "gyaani_locked_share": gyaani_locked_share,
+    "weekly_active_callers_calibrated": weekly_active_callers_calibrated,
+    "high_confidence_call_ratio": high_confidence_call_ratio,
+    "daily_gyaani_aspirant_count": daily_gyaani_aspirant_count,
+    "calls_with_explanation_rate": calls_with_explanation_rate,
+    "funnel_stages": funnel_stages,
 }
 
 

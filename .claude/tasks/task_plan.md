@@ -935,21 +935,55 @@ locked⊂aspirant subset, and stub status documentation.
 gap; 247/247 tests + 11/11 failure modes pass).
 
 ### P5: Single funnel page (simplification)
-- [ ] New frontend page `frontend/app/funnel/page.tsx`:
-      three stages — Top (signup → first call), Middle (first
-      call → 3 resolved), Bottom (3 resolved → Gyaani in any
-      sector). One conversion rate + one absolute count per
-      stage, plus the segment-mix at each stage.
-- [ ] Existing metrics map directly: `time_to_first_action`
-      (top), `predictions_per_user` (middle), P4's
-      `daily_gyaani_graduated` (bottom).
-- [ ] Add a "drop-off reason" row per stage — pulled from the
-      P3 segment classifier on users who *stopped* at that stage
-      (Ghosted, Cooled-off, etc.).
-**Done when:** the funnel page renders, three stages visible,
+- [x] New backend metric `funnel_stages(week_of, acquisition_source)`
+      in `metrics/definitions.py` — returns all four stage counts
+      + per-stage conversion + per-gate drop-off segment mix in
+      one MetricResult. Single source of truth; frontend renders
+      without composing metrics (defined-once rule).
+- [x] Registered in `mcp/tools.py` TOOLS dict (28 tools now,
+      was 21). Also retroactively registered the seven metrics
+      added this session (gyaani_aspirant_share,
+      gyaani_locked_share, weekly_active_callers_calibrated,
+      high_confidence_call_ratio, daily_gyaani_aspirant_count,
+      calls_with_explanation_rate) — they were defined but not
+      tool-exposed.
+- [x] Frontend page `frontend/app/funnel/page.tsx` (new). Four
+      horizontal bars proportional to share_of_signup. Three
+      drop-off cards below, each showing the segment-mix bars
+      of users who didn't progress past that gate.
+- [x] Sidebar entry "Growth funnel" added under "See it move"
+      group.
+- [x] Tests: `metrics/test_funnel.py` (10 tests) cover stage
+      shape, strict-subset invariant, drop-off attribution,
+      locked sub-count, headline = aspirant/signup ratio, and
+      cross-consistency with `gyaani_aspirant_share`.
+- [x] Verified end-to-end against running dev server: backend
+      POST /api/metrics/funnel_stages returns valid stages
+      (1700→1280→677→358), frontend /funnel route 200s and
+      compiles in 800ms with no errors.
+
+**W01 numbers:**
+- Signed up: 1700 (unstop cohort)
+- Made first call: 1280 (75.3% from prior)
+- 3+ resolved calls: 677 (52.9% from prior, 39.8% of signups)
+- Gyaani-aspirant: 358 (52.9% from prior, 21.1% of signups)
+- Locked: 0 on W01 (multi-week gated)
+- Top drop-off after 3+ resolved (sampled): diversifiers (20),
+  cooled_off (10), anchored (10), concentrators (4) — these
+  cohorts hit the volume bar but mu/phi didn't land in
+  aspirant. Diversifiers leading is informative: spreading
+  thin = lower per-sector signal.
+- Drop-off after first call: all classify "(none)" segment
+  (made 1-2 calls, below the 3-call segment scoring gate) —
+  honest data-starved signal.
+
+**Done when:** ~~the funnel page renders, three stages visible,
 each stage's denominator + numerator are queryable through the
-metric tool surface (not redefined inline).
-**Status:** pending
+metric tool surface (not redefined inline).~~ DONE: page renders
+four stages + locked sub-tier; all stage counts come from a
+single tool-callable metric; 10 funnel-specific tests pass;
+257/247 (10 new) full suite pass; 11/11 failure modes pass.
+**Status:** complete (2026-05-25)
 
 ## Layer 3 — Activation & insight (PMF derisking)
 
