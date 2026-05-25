@@ -7,36 +7,44 @@ import { llm } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const NAV = [
-  // Story — the consumption entry points
-  { href: "/briefing", label: "Briefing",        group: "story" },
-  { href: "/",         label: "Living world",    group: "story" },
-  { href: "/funnel",   label: "Growth funnel",   group: "story" },
+  // Quick read — single-screen exec views
+  { href: "/today",    label: "Today",          group: "exec" },
+  // Briefings — for product / growth peers
+  { href: "/briefing", label: "Full briefing",  group: "product" },
+  { href: "/funnel",   label: "Growth funnel",  group: "product" },
+  { href: "/cs-nudges", label: "Nudge list",    group: "product" },
   // Act — what to do today
-  { href: "/cs-nudges", label: "Nudge targets",  group: "act" },
+  { href: "/proposals", label: "Proposals",     group: "act" },
   { href: "/cs",        label: "CS interventions", group: "act" },
-  { href: "/proposals", label: "Proposals",      group: "act" },
-  { href: "/chat",      label: "Ask the agent",  group: "act" },
-  // Drill — per-user / per-substrate detail
-  { href: "/fingerprint", label: "User fingerprint", group: "drill" },
-  { href: "/overview",  label: "Substrate overview", group: "drill" },
-  { href: "/metrics",   label: "Metrics catalog", group: "drill" },
-  { href: "/identity",  label: "Identity graph", group: "drill" },
-  // Deep — engineering / audit
-  { href: "/audit",     label: "Audit trail",    group: "deep" },
-  { href: "/eval",      label: "Eval scorecard", group: "deep" },
+  { href: "/chat",      label: "Ask the agent", group: "act" },
+  // Engineering — substrate detail
+  { href: "/",         label: "Living world",   group: "eng" },
+  { href: "/overview", label: "Substrate overview", group: "eng" },
+  { href: "/fingerprint", label: "User fingerprint", group: "eng" },
+  { href: "/metrics",  label: "Metrics catalog", group: "eng" },
+  { href: "/identity", label: "Identity graph", group: "eng" },
+  { href: "/audit",    label: "Audit trail",    group: "eng" },
+  { href: "/eval",     label: "Eval scorecard", group: "eng" },
 ];
 
-const GROUPS = ["story", "act", "drill", "deep"] as const;
+const GROUPS = ["exec", "product", "act", "eng"] as const;
 const GROUP_LABELS: Record<string, string> = {
-  story: "See the story",
+  exec: "Quick read",
+  product: "Product / growth",
   act: "Take action",
-  drill: "Drill in",
-  deep: "Engineering / audit",
+  eng: "Engineering",
 };
 
 export function Sidebar() {
   const pathname = usePathname();
   const [agentUp, setAgentUp] = useState<boolean | null>(null);
+
+  // /today is the single-screen shareable exec view — no sidebar. The
+  // page is meant to be pasted in Slack / opened on a phone / dropped
+  // in a deck; a 14-item nav next to it would defeat the simplification.
+  if (pathname === "/today") {
+    return null;
+  }
 
   useEffect(() => {
     llm.status().then((s) => setAgentUp(!!s.has_key)).catch(() => setAgentUp(false));

@@ -60,6 +60,7 @@ from metrics.definitions import (
     briefing as _briefing,
     recovery_arc_evidence as _recovery_arc_evidence,
     activation_cohort_lift as _activation_cohort_lift,
+    today_glance as _today_glance,
 )
 from metrics.skill import get_skill_distribution as _get_skill_distribution
 
@@ -243,6 +244,11 @@ def activation_cohort_lift(features_week: str = "2024-W01",
     return _activation_cohort_lift(features_week, outcome_week)
 
 
+@tool_result
+def today_glance(week_of: str = "2024-W01") -> MetricResult:
+    return _today_glance(week_of)
+
+
 TOOLS: dict[str, Callable[..., MetricResult]] = {
     "weekly_active_posters": weekly_active_posters,
     "time_to_first_action": time_to_first_action,
@@ -278,6 +284,7 @@ TOOLS: dict[str, Callable[..., MetricResult]] = {
     "briefing": briefing,
     "recovery_arc_evidence": recovery_arc_evidence,
     "activation_cohort_lift": activation_cohort_lift,
+    "today_glance": today_glance,
 }
 
 

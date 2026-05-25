@@ -70,6 +70,8 @@ DEFS = {
     # P0.5b multi-week verification metrics.
     "recovery_arc_evidence": "1.0.0",
     "activation_cohort_lift": "1.0.0",
+    # Consumption layer: the exec one-screen view (plain English, no jargon).
+    "today_glance": "1.0.0",
 }
 
 # Gyaani definition (P1). Two-tier: aspirant is the growth slope (broad,
@@ -3586,4 +3588,137 @@ def _empty_metric(name: str, why: str) -> MetricResult:
         computation_sql="",
         as_of=_now(),
         breakdowns=dict(empty=True, reason=why),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Consumption layer (exec view): today_glance.
+#
+# Radically simpler than /briefing. Plain English, no engineering terms.
+# One hero number, three supporting numbers, one action card.
+# /today renders this. /briefing keeps the 7-question detail for product/
+# growth. /overview keeps the substrate dashboard for engineering.
+# ---------------------------------------------------------------------------
+
+
+def today_glance(week_of: str = "2024-W01") -> MetricResult:
+    """One-screen exec read of the substrate. NO engineering jargon
+    surfaces here — translate everything to plain English at this layer
+    so the frontend just renders strings.
+
+    Vocabulary mapping enforced in this function:
+      Gyaani-locked  -> "earned the badge"
+      Gyaani-aspirant -> "on the badge path"
+      mu / phi       -> "predicted skill" / "how sure we are"
+      predictions    -> "calls"  (product already uses this)
+      insights_generate -> "what the data is telling us"
+      near-miss aspirants -> "users almost at the badge"
+
+    Returns a flat plain-English payload:
+      {
+        "headline_pct": float,        # signup -> badge-path conversion
+        "headline_sentence": str,     # one sentence
+        "this_week_numbers": [{label, value}],   # 3-4 items
+        "top_action": {title, detail, button_label, action_endpoint, count},
+        "footer_note": str,           # 1 line
+      }
+    """
+    funnel = funnel_stages(week_of)
+    nudges = nudge_targets(week_of, top_n=5)
+
+    stages = funnel.breakdowns["stages"]
+    signed = stages[0]["n"]
+    on_path = stages[3]["n"]
+    earned = funnel.breakdowns["locked"]
+    # Use funnel's signup-to-aspirant conversion so the headline percentage
+    # matches the displayed numerator/denominator. gyaani_aspirant_share
+    # uses a different cohort definition (active in week) and would
+    # produce a small mismatch.
+    pct = funnel.value * 100
+
+    # Synthesise the one-sentence headline. Tense + comparison kept light.
+    headline_sentence = (
+        f"{pct:.0f} out of every 100 new users are on the badge path "
+        f"within their first week."
+    )
+
+    # Three supporting numbers — concrete, plain words.
+    this_week = [
+        dict(label="New users this week", value=f"{signed:,}"),
+        dict(label="On the badge path", value=f"{on_path:,}"),
+        dict(label="Earned the badge", value=f"{earned:,}"),
+    ]
+
+    # The one action. Pull from the near-miss cohort — the substrate's
+    # highest-leverage nudge target. Plain-language re-phrasing of the
+    # nudge_targets output.
+    n_near = len(nudges.breakdowns["targets"])
+    if n_near > 0:
+        top = nudges.breakdowns["targets"][0]
+        # Render the gap in plain words.
+        if top["biggest_gap_axis"] == "calls":
+            gap_phrase = f"{top['gap_calls']} more calls"
+        elif top["biggest_gap_axis"] == "mu":
+            gap_phrase = "more accurate calls"
+        else:
+            gap_phrase = "more calls to build confidence"
+        top_action = dict(
+            title=f"{n_near} users are almost at the badge",
+            detail=(
+                f"The closest one needs just {gap_phrase}. "
+                f"Send a one-line nudge this week and measure the lift."
+            ),
+            button_label="See the list",
+            action_endpoint="/cs-nudges",
+            count=n_near,
+        )
+    else:
+        top_action = dict(
+            title="No near-miss users to nudge this week",
+            detail="The substrate found no high-leverage nudge target. Run multi-week (make multiweek) to refresh.",
+            button_label="Open the data",
+            action_endpoint="/briefing",
+            count=0,
+        )
+
+    footer_note = (
+        f"Live numbers, recomputed each load. Week {week_of}. "
+        f"Click 'Full briefing' below for the 7-question detail."
+    )
+
+    interp = (
+        f"This week: {signed:,} new users, {on_path:,} on the badge path "
+        f"({pct:.1f}%), {earned} earned the badge. Top action: nudge the "
+        f"{n_near} users who are almost there."
+    )
+    return MetricResult(
+        trace=[
+            f"today_glance: signup->badge_path = {pct:.4f}%, {n_near} near-miss users surfaced.",
+            "plain-English payload only; consumer (frontend) renders strings as-is.",
+            "underlying tools: gyaani_aspirant_share + funnel_stages + nudge_targets.",
+        ],
+        metric_name="today_glance",
+        value=float(pct / 100.0),
+        confidence=0.90,
+        sample_n=signed,
+        provenance=[
+            f"week_of:{week_of}",
+            f"signed:{signed}",
+            f"on_path:{on_path}",
+            f"earned:{earned}",
+            f"near_miss:{n_near}",
+        ],
+        window_open=False,
+        interpretation=interp,
+        definition_version=DEFS["today_glance"],
+        computation_sql="-- composite of gyaani_aspirant_share + funnel_stages + nudge_targets --",
+        as_of=_now(),
+        breakdowns=dict(
+            headline_pct=pct,
+            headline_sentence=headline_sentence,
+            this_week_numbers=this_week,
+            top_action=top_action,
+            footer_note=footer_note,
+            week_of=week_of,
+        ),
     )
