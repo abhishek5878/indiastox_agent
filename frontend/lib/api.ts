@@ -44,7 +44,26 @@ export const proposals = {
     j<Proposal[]>(`/api/proposals${status ? `?status=${status}` : ""}`),
   act: (id: string, action: "approve" | "reject" | "execute") =>
     j(`/api/proposals/${id}/${action}`, { method: "POST" }),
+  auto: (weekOf = "2024-W01") =>
+    j<AutoProposalResult>("/api/proposals/auto", {
+      method: "POST",
+      body: JSON.stringify({ week_of: weekOf }),
+    }),
 };
+
+export interface AutoProposalResult {
+  filed: boolean;
+  reason: string;
+  proposal_id: string | null;
+  yaml_path?: string;
+  insight: {
+    kind: string;
+    subject: string;
+    surprise_score: number;
+    summary: string;
+    suggested_experiment: string;
+  } | null;
+}
 
 // --- Interventions ---
 export const interventions = {

@@ -1,7 +1,7 @@
 "use client";
 
 import { Badge, Card, CardContent, CardHeader, CardTitle } from "@/components/ui";
-import { metrics, MetricResult } from "@/lib/api";
+import { AutoProposalResult, metrics, MetricResult, proposals } from "@/lib/api";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
@@ -181,6 +181,7 @@ export default function BriefingPage() {
                         from: {u.source_metric}
                       </span>
                     </div>
+                    {u.id === "growth_hack" && <AutoProposeButton />}
                   </div>
                 </div>
               </CardContent>
@@ -214,6 +215,54 @@ export default function BriefingPage() {
       <div className="text-[11px] text-[var(--muted-foreground)] mono">
         briefing v{result.definition_version} · {result.interpretation}
       </div>
+    </div>
+  );
+}
+
+function AutoProposeButton() {
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<AutoProposalResult | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const fire = async () => {
+    setLoading(true);
+    setErr(null);
+    try {
+      const r = await proposals.auto("2024-W01");
+      setResult(r);
+    } catch (e) {
+      setErr(String(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="mt-3 pt-3 border-t border-[var(--border)]/60">
+      <button
+        onClick={fire}
+        disabled={loading}
+        className="px-3 py-1.5 text-xs rounded-md bg-[var(--primary)] text-white font-medium disabled:opacity-50"
+      >
+        {loading ? "Filing…" : "File top insight as Proposal"}
+      </button>
+      {result && result.filed && (
+        <div className="mt-3 text-[11px]">
+          <Badge variant="outline" className="bg-emerald-500/20 text-emerald-300 border-emerald-500/30">
+            ✓ Filed {result.proposal_id}
+          </Badge>
+          <div className="mt-2 text-[var(--foreground)]">{result.insight?.summary}</div>
+          <div className="mt-1 text-[var(--muted-foreground)]">
+            Approve at <Link className="text-[var(--primary)] hover:underline" href="/proposals">/proposals</Link> to fire the experiment.
+          </div>
+        </div>
+      )}
+      {result && !result.filed && (
+        <div className="mt-3 text-[11px] text-[var(--muted-foreground)]">
+          Not filed: {result.reason}
+        </div>
+      )}
+      {err && <div className="mt-3 text-[11px] text-red-400 mono">{err}</div>}
     </div>
   );
 }

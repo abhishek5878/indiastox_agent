@@ -171,6 +171,26 @@ def _start_experiment(proposal_id: str) -> Optional[dict]:
 from datetime import timedelta  # noqa: E402
 
 
+@router.post("/auto")
+def auto_propose(payload: Optional[dict] = None):
+    """File the top insight from insights_generate as a Proposal.
+
+    Returns the same shape as agent.auto_proposal.file_top_insight:
+      {filed, reason, proposal_id, insight, ...}
+
+    On filed=True, the proposal lands in /proposals/pending and the
+    follow-up POST /api/proposals/{id}/approve schedules its
+    experiment in the sim. This is the substrate's closed loop made
+    callable from the browser — the /briefing page's growth_hack
+    umbrella binds to it.
+    """
+    from agent.auto_proposal import SURPRISE_FLOOR, file_top_insight
+
+    week = (payload or {}).get("week_of", "2024-W01")
+    floor = float((payload or {}).get("surprise_floor", SURPRISE_FLOOR))
+    return file_top_insight(week_of=week, surprise_floor=floor)
+
+
 @router.post("/{proposal_id}/{action}")
 def act(proposal_id: str, action: Literal["approve", "reject", "execute"]):
     target = {"approve": "approved", "reject": "rejected", "execute": "executed"}[action]
