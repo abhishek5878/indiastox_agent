@@ -45,6 +45,15 @@ audit:
 digest:
 	python3 -m agent.insights_digest $(ARGS)
 
+autoproposal:
+	python3 -m agent.auto_proposal $(ARGS)
+
+multiweek:
+	MULTIWEEK=1 python3 generate.py --step=events
+	python3 identity/resolve.py
+	python3 metrics/skill.py
+	python3 load_metrics_to_db.py
+
 llm-demo:
 	python3 -m agent.llm_growth_agent $(ARGS)
 

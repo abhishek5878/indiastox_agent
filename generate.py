@@ -609,6 +609,130 @@ def gen_backend_events(personas: pd.DataFrame) -> tuple[list[dict], list[dict]]:
     return events, outcomes
 
 
+def gen_followup_week_events(personas: pd.DataFrame, week_of: str) -> tuple[list[dict], list[dict]]:
+    """Generate prediction + outcome events for an existing W01 cohort in
+    a follow-up week (W02+). No user_signup, no challenge_signup — those
+    happened in W01. The same substrate-driven loop as gen_backend_events
+    drives ticker/star/n_pred decisions; only the time anchor + per-week
+    RNG sub-seed change.
+
+    Cross-week state continuity is out of scope here: each week starts
+    from a fresh UserState (archetype traits + initial belief/trust
+    carry — they're persona attributes, not state). What changes across
+    weeks is the RNG: same persona, different ticker/star/outcome roll,
+    so a Recovery Streaker archetype with high true_skill_std naturally
+    has a bad-luck week followed by a good-luck week, exercising the
+    Gyaani recovery-arc rule end-to-end.
+
+    Deferred-join semantics preserved: each call resolves at made_at + 5d,
+    which usually lands in the same week (made early) or the next week
+    (made Thu/Fri/Sat). The resolver handles cross-week outcomes already.
+    """
+    year, week_num = week_of.split("-W")
+    week_start = WEEK_START_IST + timedelta(days=(int(week_num) - 1) * 7)
+
+    events: list[dict] = []
+    outcomes: list[dict] = []
+
+    for _, p in personas.iterrows():
+        persona_id = p["persona_id"]
+        canonical_user_id = str(
+            uuid.UUID(int=int(hashlib.sha256(persona_id.encode()).hexdigest()[:32], 16))
+        )
+        true_skill = float(p.get("true_skill", 0.0) or 0.0)
+        archetype = archetype_for_persona(persona_id)
+
+        # Per-persona-per-week RNG so each week's behavior varies.
+        persona_seed = int(
+            hashlib.sha256(f"events:{persona_id}:{SEED}:{week_of}".encode()).hexdigest()[:8], 16
+        )
+        rng = random.Random(persona_seed)
+
+        # Fresh UserState anchored at this week's start.
+        us = init_user_state(persona_id, week_start.replace(tzinfo=None))
+
+        # Ghost decision — same structural form as W01, but lurkers
+        # (cohort_tag=late_activator) are MORE likely to be active in
+        # follow-up weeks (they ghosted W01 by design).
+        baseline_ghost = 0.15
+        structural_ghost = 0.0
+        if us.trust.trust < 0.5:
+            structural_ghost += 0.15 * (0.5 - us.trust.trust) / 0.5
+        if archetype.daily_time_budget_minutes_mean < 20:
+            structural_ghost += 0.20 * (20 - archetype.daily_time_budget_minutes_mean) / 20
+        if archetype.cohort_tag == "late_activator":
+            structural_ghost *= 0.2  # lurkers wake up in W02+
+        ghost_p = min(0.90, baseline_ghost + structural_ghost)
+        if rng.random() < ghost_p:
+            continue
+
+        sig_dt = week_start.replace(tzinfo=None)
+        mod_structural = compose([
+            layer_mood_arc(us, archetype),
+            layer_trust_decay(us, archetype),
+            layer_learning_curve(us, archetype, sig_dt),
+        ])
+        base_calls_per_week = max(1, int(archetype.daily_time_budget_minutes_mean / 8.0))
+        n_pred = max(0, min(15, round(base_calls_per_week * mod_structural.call_probability_multiplier)))
+
+        for _ in range(n_pred):
+            made_at = week_start + timedelta(
+                hours=rng.randint(0, 24 * 6),
+                minutes=rng.randint(0, 59),
+            )
+            mod = compose_all_layers(us, made_at.replace(tzinfo=None))
+            ticker = _pick_ticker_biased(rng, mod.sector_bias, mod.ticker_bias)
+            sector = SECTOR_OF.get(ticker, "other")
+            direction = rng.choices(["BULL", "BEAR"], weights=[55, 45], k=1)[0]
+            base_star = rng.choices([1, 2, 3, 4, 5], weights=[20, 25, 25, 20, 10], k=1)[0]
+            skill_offset = max(-2, min(2, round(true_skill * 1.0)))
+            inflation_offset = round(mod.star_inflation)
+            stars = max(1, min(5, base_star + skill_offset + inflation_offset))
+
+            prediction_id = str(uuid.UUID(int=rng.getrandbits(128)))
+            events.append(dict(
+                event_type="prediction_made",
+                user_id=canonical_user_id,
+                prediction_id=prediction_id,
+                stock_symbol=ticker,
+                direction=direction,
+                confidence_stars=stars,
+                made_at=_utc(made_at),
+            ))
+            us = apply_event(us, CallMadeEvent(
+                user_id=canonical_user_id, ticker=ticker, sector=sector,
+                direction=direction, stars=stars,
+                sim_now=made_at.replace(tzinfo=None),
+            ))
+
+            resolved_at = made_at + timedelta(days=5)
+            p_win = max(0.22, min(0.62, 0.42 + true_skill * 0.10))
+            p_draw = 0.08
+            p_loss = 1.0 - p_win - p_draw
+            outcome = rng.choices(
+                ["WIN", "LOSS", "DRAW"], weights=[p_win, p_loss, p_draw], k=1,
+            )[0]
+            pnl = {"WIN": rng.uniform(0.5, 5.0),
+                   "LOSS": -rng.uniform(0.5, 4.0),
+                   "DRAW": 0.0}[outcome]
+            outcomes.append(dict(
+                event_type="prediction_outcome",
+                prediction_id=prediction_id,
+                user_id=canonical_user_id,
+                outcome=outcome,
+                pnl_points=round(pnl, 3),
+                accuracy_delta=round(rng.uniform(-0.05, 0.05), 4),
+                resolved_at=_utc(resolved_at),
+            ))
+            us = apply_event(us, OutcomeResolvedEvent(
+                user_id=canonical_user_id, ticker=ticker, sector=sector,
+                outcome=outcome, stars=stars,
+                sim_now=resolved_at.replace(tzinfo=None),
+            ))
+
+    return events, outcomes
+
+
 def gen_posthog(personas: pd.DataFrame) -> list[dict]:
     """PostHog frontend events. 15% of users' sessions never identify."""
     rng = random.Random(SEED + 20)
@@ -774,6 +898,18 @@ def step_events() -> None:
 
     # 2. Backend (split into current events vs deferred outcomes)
     backend, outcomes = gen_backend_events(personas)
+    # Opt-in multi-week extension (P0.5b): MULTIWEEK=1 generates W02-W04
+    # for the existing cohort so cross-week metrics (recovery arc,
+    # activation-cohort lift) have data to exercise. Default off keeps
+    # the existing W01-only test contract.
+    import os as _os
+    multi_weeks = _os.environ.get("MULTIWEEK", "0").lower() in ("1", "true", "yes")
+    if multi_weeks:
+        for week in ("2024-W02", "2024-W03", "2024-W04"):
+            extra_b, extra_o = gen_followup_week_events(personas, week)
+            backend.extend(extra_b)
+            outcomes.extend(extra_o)
+            print(f"  + {week}: {len(extra_b)} preds, {len(extra_o)} outcomes", file=sys.stderr)
     n = _write_ndjson(RAW_DIR / "backend_events.ndjson", backend)
     print(f"wrote raw/backend_events.ndjson  events={n}", file=sys.stderr)
     n = _write_ndjson(RAW_DIR / "outcomes_week01.ndjson", outcomes)

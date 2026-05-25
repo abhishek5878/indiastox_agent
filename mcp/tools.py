@@ -58,6 +58,8 @@ from metrics.definitions import (
     nudge_targets as _nudge_targets,
     user_fingerprint as _user_fingerprint,
     briefing as _briefing,
+    recovery_arc_evidence as _recovery_arc_evidence,
+    activation_cohort_lift as _activation_cohort_lift,
 )
 from metrics.skill import get_skill_distribution as _get_skill_distribution
 
@@ -229,6 +231,18 @@ def briefing(week_of: str = "2024-W01") -> MetricResult:
     return _briefing(week_of)
 
 
+@tool_result
+def recovery_arc_evidence(from_week: str = "2024-W01",
+                          to_week: str = "2024-W02") -> MetricResult:
+    return _recovery_arc_evidence(from_week, to_week)
+
+
+@tool_result
+def activation_cohort_lift(features_week: str = "2024-W01",
+                           outcome_week: str = "2024-W02") -> MetricResult:
+    return _activation_cohort_lift(features_week, outcome_week)
+
+
 TOOLS: dict[str, Callable[..., MetricResult]] = {
     "weekly_active_posters": weekly_active_posters,
     "time_to_first_action": time_to_first_action,
@@ -262,6 +276,8 @@ TOOLS: dict[str, Callable[..., MetricResult]] = {
     "nudge_targets": nudge_targets,
     "user_fingerprint": user_fingerprint,
     "briefing": briefing,
+    "recovery_arc_evidence": recovery_arc_evidence,
+    "activation_cohort_lift": activation_cohort_lift,
 }
 
 
