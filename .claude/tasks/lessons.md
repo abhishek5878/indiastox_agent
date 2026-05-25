@@ -302,3 +302,58 @@ When writing a lesson, ask: *would this pattern-match on the next occurrence?* "
   reviewers) can flag the gap honestly. Rule: a silently-zero
   metric pretends to measure something it can't; an explicit stub
   documents the gap and the unlock path. Always prefer the stub.
+
+- 2026-05-25 [CONSUMPTION] Shipping a substrate is not the same as
+  shipping a product — exposing 30+ metric tools through 12 sidebar
+  items is consumption-hostile to non-engineers. After P0.5/P1/P2/
+  P3/P4/P5/P7 all shipped and tested, user feedback was "still very
+  difficult to consume". The fix was a single /briefing page that
+  answers the meeting's own questions in plain English with status
+  chips (✓ shipped / ◐ partial / ○ gated), live numbers, CTAs, and
+  a sidebar regrouped 12-flat → 4 priority buckets (Story / Act /
+  Drill / Engineering). Rule: every substrate phase should ship with
+  a consumption surface in the same commit. If users can't read it,
+  it isn't done. Build the narrative before the next substrate.
+
+- 2026-05-25 [ARCH] Production-only DuckDB attach conflicts come from
+  per-row nested connections in long-lived workers. funnel_stages
+  worked locally (fresh process per pytest) but 500'd on Render
+  because its _seg_mix loop opened a fresh DuckDB connection per
+  stuck user via classify_user_segment → _user_calls → _connect.
+  Under uvicorn's persistent worker, the file's already attached as
+  'indiastox', and Python's reference-counting timing made the
+  per-user opens collide. Fix pattern: open one connection at the
+  top of the metric, batch-fetch all needed data into memory, then
+  classify via a pure helper (classify_user_segment_from_data).
+  Rule: in metric code, opening a DuckDB connection per loop
+  iteration is a smell. Batch the fetch; classify in memory.
+
+- 2026-05-25 [DEPLOY] Render bakes the warehouse into the Docker
+  image. Code-only commits don't ship data changes; multi-week
+  metrics (recovery_arc_evidence, activation_cohort_lift) returned
+  zero-cohort results on production until a second commit
+  (52cc8ca) explicitly added warehouse/indiastox.duckdb +
+  raw/*.ndjson + data/skill_ratings.parquet. Rule: when a substrate
+  phase regenerates data (multi-week, new event types, schema
+  changes), the deploy is two commits: code first, data second.
+  Audit `git status` for warehouse/raw/data file changes BEFORE
+  declaring shipped-to-prod.
+
+- 2026-05-25 [METHODOLOGY] Honesty-by-default in consumption
+  surfaces. The briefing page reports 7/7 shipped + 0 partial only
+  because both multi-week verifications actually returned non-zero
+  cohorts; otherwise the status chip auto-flips back to partial and
+  the gated list auto-grows. Rule: build status reporting that
+  recomputes from the substrate state every render, never from
+  hardcoded labels. A page that says "shipped" when the underlying
+  metric returns zero is a lie waiting to happen.
+
+- 2026-05-25 [SCOPE] When closing "partial" work, sequence by
+  dependency not size. The 3 partials in this turn were P7b
+  (independent, ~30min), P1 recovery-arc (needs P0.5b data), P6
+  activation (needs P0.5b data). Started with P7b for the quick
+  win, then P0.5b as the unlock for both data-dependent ones.
+  Trying to close them in user-named order would have meant doing
+  the slowest (P6) first while the data didn't exist. Rule:
+  partials are gated on each other; surface the dependency graph
+  and execute by it.

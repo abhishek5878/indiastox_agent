@@ -628,3 +628,92 @@ session. Remaining substrate work: P0.5b (multi-week + cross-agent),
 P5 (frontend funnel page), P6 (good-day activation analysis),
 P7 (insights extractor + growth-hack experiment). P0.5b is the
 unlock for the 4 honest stubs above; P5-P7 are independent.
+
+## 2026-05-25 — Consumption layer + all 7 umbrellas closed in prod
+
+The longest-arc session yet (7 commits ahead of last session-end
+c83c2e4). Three things shipped in sequence: insight extractor (P7),
+consumption layer (digest + CS nudges + fingerprint), then briefing
+narrative page + sidebar restructure. Then user feedback "still very
+difficult to consume" → /briefing as a single-page meeting-question
+narrative. Then user "let us finish partial tasks" → P0.5b multi-week
++ P7b auto-proposal, closing the last 3 partials. Production reports
+7/7 shipped, 0 partial, live at https://indiastox.vercel.app/briefing.
+
+### What shipped (commit order)
+
+- `13e7b5f` feat(funnel): ship P5 single-page growth funnel +
+  retroactively register the 7 session metrics in mcp/tools (TOOLS
+  dict 21 → 28). funnel_stages returns 4 stage counts + per-gate
+  drop-off segment mix in a single MetricResult.
+
+- `ed3da58` feat(consumption): three consumer-facing pieces shipped
+  together — agent/insights_digest.py (make digest CLI + text/md
+  formatters), /cs-nudges page (top 50 aspirants by gap-to-locked
+  with axis-filter pills), /fingerprint page (per-user Gyaani tier +
+  8-axis bars + segment, user-id lookup + near-miss sample buttons).
+  TOOLS 28 → 31.
+
+- `3e3d806` fix(funnel): collapse nested DB conns to single-batch
+  pattern. Production was 500-ing on funnel_stages because per-stuck-
+  user classify_user_segment opened nested DuckDB connections under
+  Render's long-lived uvicorn worker — DuckDB attach conflict. Fixed
+  by adding classify_user_segment_from_data (pure, no DB I/O) and
+  refactoring funnel_stages to batch-fetch on one conn.
+
+- `e2e00f1` feat(briefing): /briefing page as new sidebar landing.
+  Answers the 7 meeting questions verbatim in plain English with
+  status chips (✓ shipped / ◐ partial / ○ gated), live numbers,
+  CTAs, source-metric audit lines. Today block with top 3 insights
+  + top 5 nudges. Sidebar regrouped 12-flat → 4 buckets (Story / Act
+  / Drill / Engineering). TOOLS 31 → 32 (briefing).
+
+- `9d9c9b5` feat(p0.5b+p7b): close all 3 partials.
+  P7b: agent/auto_proposal.py files top insight as Proposal end-to-
+  end (YAML + DB + audit). make autoproposal target.
+  P0.5b minimal multi-week: gen_followup_week_events in generate.py
+  emits W02-W04 prediction events using per-week RNG. Opt-in via
+  MULTIWEEK=1 so single-week test contract stays intact. make
+  multiweek target. W01-W04 = 4818/6897/5778/5633 predictions.
+  recovery_arc_evidence(W01,W02): 26 users had bad→strong streak;
+  17 (65.4%) tier'd up — Gyaani recovery rule fires on real data.
+  activation_cohort_lift(W01,W02): top W1 feature is five_plus_calls
+  at 1.05× W2 retention — the IndiaStox 5-friend moment.
+  briefing() auto-updates: 4/7 → 7/7 shipped, gated list shifts to
+  cross-agent layers (P0.5c) as next deferred.
+
+- `52cc8ca` data: bake multi-week warehouse + raw events for
+  production. Render ships warehouse in Docker image; without this
+  prod recovery_arc + activation_cohort return zero cohorts. 13MB
+  image bump.
+
+### Numbers (end of session)
+
+- 301/247 (54 net new) tests pass; 11/11 failure modes pass.
+- TOOLS dict 28 → 34 (briefing, recovery_arc_evidence,
+  activation_cohort_lift, nudge_targets, user_fingerprint,
+  insights_generate, funnel_stages added this session-block).
+- 7 new frontend pages or surfaces: /funnel, /cs-nudges,
+  /fingerprint, /briefing (3 of these added this session;
+  /funnel was P5 from earlier turn).
+- Git: 6 commits ahead of c83c2e4, all pushed and deployed to
+  Vercel + Render production.
+- Live verified: briefing returns shipped_count=7/7 on prod;
+  recovery_arc_evidence returns 65.4% tier-up on prod; all
+  frontend pages return 200 on https://indiastox.vercel.app.
+
+### What's still deferred (now the ONLY substrate gap)
+
+P0.5c cross-agent layers: wire peer_copy + group_clustering +
+copy_trading into a tick-by-tick event loop. Closes the 3 honest
+stubs (influence axis, discovery axis, shadows segment). Not a
+meeting umbrella — pure substrate completeness. Briefing's gated
+list auto-points at this.
+
+### Status
+
+All 7 meeting umbrellas live and verified in production. The
+consumption layer (briefing, fingerprint, CS nudges, digest, funnel)
+makes the substrate readable by a non-engineer. The only deferred
+substrate work is P0.5c which closes the last 3 stubs but doesn't
+move a meeting needle. Natural pause point.
